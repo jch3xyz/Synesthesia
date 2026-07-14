@@ -1,0 +1,15 @@
+(
+	name: "Synesthesia",
+	summary: "A live-coding vocabulary for SuperCollider where the patch is the canvas and patterns are brushes",
+	author: "John Holmes",
+	copyright: "© 2026 John Holmes",
+	license: "GPL-3.0-or-later",
+	version: "0.1.0",
+	schelp: "Classes/Synesthesia",
+	dependencies: [
+		"Bjorklund",
+		"BatLib",
+		"ddwSnippets",
+		"JITLibExtensions"
+	]
+)

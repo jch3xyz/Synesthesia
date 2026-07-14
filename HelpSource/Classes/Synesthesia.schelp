@@ -1,0 +1,22 @@
+TITLE:: Synesthesia
+summary:: A live-coding vocabulary where the patch is the canvas and patterns are brushes
+categories:: Live Coding
+related:: Overviews/JITLib
+
+DESCRIPTION::
+Synesthesia is a personal live-coding language layered over JITLib/ProxySpace.
+Its registers: painting words for timbre and texture (colors as HSV timbre
+coordinates, tools as applicators), music words for pitch and time, systems words
+for topology — all evaluating to plain SuperCollider objects so raw SC composes
+anywhere.
+
+This is the Phase 0 skeleton. The vocabulary arrives in Phases 1–2; see the
+Roadmap in the author's Live-Coding-With-SuperCollider repository.
+
+CLASSMETHODS::
+
+METHOD:: version
+The quark version string.
+
+METHOD:: dir
+The quark's root folder on disk.
