@@ -1,0 +1,41 @@
+INSTANCEMETHODS::
+
+subsection:: Synesthesia step notation
+
+The following methods are added by the Synesthesia quark
+(see link::Guides/Synesthesia::). They let a step string act as raw pattern
+material in emphasis::any:: pattern socket, independent of the
+link::Classes/Symbol#-hits#hits:: word.
+
+METHOD:: steps
+The string as a duration pattern: code::x:: (or code::X::, or a digit) marks an
+onset, code::.:: a rest, spaces and code::|:: are ignored. Rests fold into
+onset-to-onset durations; a leading rest becomes a link::Classes/Rest:: so offbeat
+phrases keep their placement.
+argument:: step
+beats per character (default 0.25).
+argument:: amp
+unused here; present for signature symmetry with link::#-stepAmps::.
+returns:: a link::Classes/Pseq:: of durations, looping
+discussion::
+code::
+// use step notation inside any Pbind you write yourself:
+~x = Pbind(\instrument, \ping, \degree, 0, \dur, "x..x..x.".steps);
+::
+
+METHOD:: stepAmps
+The matching amplitude pattern: code::X:: characters get strong::amp:: times
+strong::accent::, plain hits get strong::amp::. Align it with link::#-steps:: from
+the same string.
+argument:: step
+beats per character (default 0.25).
+argument:: amp
+base amplitude (default 1).
+argument:: accent
+multiplier for code::X:: (default 1.4).
+returns:: a link::Classes/Pseq:: of amplitudes, looping
+discussion::
+code::
+~x = Pbind(\instrument, \ping, \degree, 0,
+	\dur, "x.Xx".steps, \amp, "x.Xx".stepAmps(amp: 0.4));
+::

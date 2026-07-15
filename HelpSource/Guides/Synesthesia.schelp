@@ -1,0 +1,256 @@
+TITLE:: Synesthesia — a live coding vocabulary
+summary:: Getting started with Synesthesia: the patch is the canvas, patterns are brushes
+categories:: Live Coding>Synesthesia
+related:: Classes/Synesthesia, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
+
+SECTION:: What Synesthesia is
+
+Synesthesia is a small language for live coding music in SuperCollider. It is built
+on top of link::Overviews/JITLib:: (SuperCollider's just-in-time programming
+library), and it exists to shorten the distance between a musical intention and the
+code that realizes it: one musical decision should cost roughly one word.
+
+The guiding image is painting. A running signal graph — drones, feedback, effects —
+is a emphasis::canvas:: that persists and evolves while you work on it. Event
+patterns — drums, melodies — are emphasis::brushes:: applied to that canvas. Words
+in Synesthesia therefore come in families: words that emphasis::spawn:: sounding
+objects, words that emphasis::sculpt:: one object, words that emphasis::wire::
+objects together, words that emphasis::transform:: patterns in time, and words that
+emphasis::bridge:: between the signal world and the pattern world.
+
+One rule holds everywhere, and it is the most important thing to understand:
+
+note::
+Every Synesthesia word evaluates to a plain SuperCollider object — a
+link::Classes/Function::, a link::Classes/Pbind::, or a link::Classes/NodeProxy::.
+There is no wall between the shorthand and the language underneath. Anything you can
+do to a Pbind you can do to the result of code::\k.hits("x..x")::; any raw SC you
+write lands on the same canvas as the words.
+::
+
+SECTION:: What you need
+
+Synesthesia assumes a small performance environment, established once in a setup
+file before playing:
+
+list::
+## an audio server booted, with a link::Classes/ProxySpace:: pushed and stored in
+   the interpreter variable code::p:: (so code::~name:: style proxies work, and
+   Synesthesia can find your clock and quantization),
+## a tempo clock on that ProxySpace (code::p.makeTempoClock::),
+## a sample dictionary in the interpreter variable code::d::, where each key is a
+   folder name string and each value is an link::Classes/Array:: of
+   link::Classes/Buffer::s — e.g. code::d["k"][0]:: is the first kick sample,
+## link::Classes/SynthDef::s for playing those samples (conventionally
+   code::\bplay::) and for melodic material (any SynthDef whose pitch argument is
+   named code::freq::, which lets SuperCollider's scale machinery drive it),
+## optionally, standing effect returns named code::~verbIn::/code::~verb:: and
+   code::~delayIn::/code::~delay:: for the code::.route:: word.
+::
+
+Dependencies: the Bjorklund quark (euclidean rhythms, installed automatically) and
+BenoitLib (for the code::.pat:: word; install with
+code::Quarks.install("https://github.com/cappelnord/BenoitLib")::).
+
+If you do not have a setup file yet, the following minimal environment makes every
+example on this page runnable, using only sounds that ship with SuperCollider:
+
+code::
+(
+s.waitForBoot {
+	p = ProxySpace.push(s);
+	p.makeTempoClock;
+	p.fadeTime = 2;
+
+	// a tiny sample dictionary from SC's bundled sounds
+	d = Dictionary.new;
+	d["k"] = [Buffer.read(s, Platform.resourceDir +/+ "sounds/a11wlk01.wav")];
+	d["s"] = [Buffer.read(s, Platform.resourceDir +/+ "sounds/a11wlk01-44_1.aiff")];
+
+	// a minimal mono sample player (pos is 0..1 start position)
+	SynthDef(\bplay, { |out = 0, buf = 0, rate = 1, amp = 0.5, pan = 0, pos = 0|
+		var sig = PlayBuf.ar(1, buf, BufRateScale.ir(buf) * rate, 1,
+			BufFrames.ir(buf) * pos, doneAction: 2);
+		Out.ar(out, Pan2.ar(sig, pan, amp));
+	}).add;
+
+	// a minimal melodic voice — note the pitch argument is named freq
+	SynthDef(\ping, { |out = 0, freq = 440, amp = 0.3, pan = 0, atk = 0.01, rel = 0.4|
+		var sig = SinOsc.ar(freq) * EnvGen.ar(Env.perc(atk, rel), doneAction: 2);
+		Out.ar(out, Pan2.ar(sig, pan, amp));
+	}).add;
+
+	// a standing reverb return for .route (silent until fed)
+	~verbIn = { Silent.ar(2) };
+	~verb = { GVerb.ar(Mix.ar(~verbIn.ar), 60, 5, 0.6, drylevel: 0) * 0.5 };
+	~verb.play;
+};
+)
+::
+
+SECTION:: A first session
+
+Each line below is evaluated on its own, in order, the way you would while
+performing. Everything crossfades because ProxySpace handles transitions.
+
+code::
+// tempo and safety: 120 BPM, changes land on the next 4-beat bar
+bpm(120);
+grid(4);
+
+// a drone: \tone names a recipe, ~r is the root as a signal
+~r = { 55 };
+~a = \tone.stack(~r, [1, 2, 4]);   // one proxy, three harmonics
+~a.fade(6).play;                    // slow crossfades, then monitor
+
+// sculpt it: insert a lowpass, then some reverb
+~a.fx(\lpf, 800);
+~a.fx(\verb, 0.4);
+
+// a drum brush: step notation on sample folder "k"
+// x = hit, X = accent, . = rest, spaces are only visual
+~k = \k.hits("x..x..x.");
+~k.play;
+
+// the kick carves the drone (sidechain)
+~a.duck(~k, 0.6);
+
+// a melody: scale degrees on the \ping SynthDef, octave 5
+~m = \ping.deg("0 3 5 [0 2 4]", 0.5);
+~m.play;
+
+// hands on: trackpad X position sweeps the drone's filter
+~a.fx(\lpf, pad(\x).mapExp(200, 8000));
+
+// move the root: the whole canvas shifts
+~r = { 65 };
+
+// leave: fade everything over 15 seconds
+hush(15);
+::
+
+SECTION:: The word families
+
+SUBSECTION:: Control words
+
+Bare words for the frame of the performance. See
+link::Classes/SimpleNumber#-bpm#bpm::, link::Classes/SimpleNumber#-grid#grid::,
+link::Classes/SimpleNumber#-hush#hush::, link::Classes/SimpleNumber#-rec#rec:: and
+link::Classes/Symbol#-pad#pad::.
+
+code::
+bpm(132);      // tempo, in familiar beats per minute
+grid(4);       // re-evaluations take effect on the next bar — type freely, land musically
+grid(0);       // ...or immediately
+hush(10);      // fade the entire canvas to silence — the musical panic button
+rec(8);        // capture 8 beats of the sound input into d["live"]
+pad(\x);       // the trackpad/mouse X position as a control signal, 0..1
+::
+
+SUBSECTION:: Spawning sound
+
+Symbols name material. A symbol that names a emphasis::sample folder:: makes drum
+patterns; a symbol that names a emphasis::SynthDef:: makes melodic patterns; a
+symbol that names a emphasis::drone recipe:: makes canvas material. See
+link::Classes/Symbol#-hits#hits::, link::Classes/Symbol#-deg#deg::,
+link::Classes/Symbol#-chord#chord::, link::Classes/Symbol#-drone#drone:: and
+link::Classes/Symbol#-stack#stack::.
+
+code::
+~k  = \k.hits("x..X 0.2.");        // step string: accents, digit picks sample variant
+~sn = \s.hits(3, 8);               // euclidean: 3 hits spread over 8 steps
+~m  = \ping.deg("0 3 5 7", 0.25);  // scale degrees, one per quarter of a beat
+~c  = \ping.chord("Cm7 Fm9", 4);   // named harmony (requires the ChordSymbol library)
+~a  = \dfm.drone(~r);              // a self-oscillating filter drone (needs sc3-plugins)
+~b  = \tone.stack(~r, [1, 3, 5]);  // odd harmonics of the root, in one proxy
+::
+
+SUBSECTION:: Sculpting one sound
+
+Effects insert onto a proxy in place, by name, and stack in the order you add them.
+Parameters may be numbers, or any signal (a proxy, another word). See
+link::Classes/NodeProxy#-fx#fx:: and friends.
+
+code::
+~a.fx(\lpf, 1200);      // insert or retune a lowpass
+~a.fx(\crush, 0.4);     // add a bitcrusher after it
+~a.unfx(\crush);        // remove it again
+~a.wide(1.5);           // stereo width
+~a.fade(8);             // this proxy crossfades over 8s from now on
+::
+
+SUBSECTION:: Wiring sounds together
+
+code::
+~t.feeds(~a, 0.2);      // mix ~t into ~a's canvas (through ~a's effects)
+~a.route(\verb, 0.3);   // send ~a to the standing reverb return from your setup
+~a.duck(~k, 0.5);       // sidechain: ~a dips whenever ~k sounds
+::
+
+SUBSECTION:: Bridges between signals and patterns
+
+code::
+~env = ~k.follow;                   // the kick's loudness envelope, as a signal
+~cut = pad(\x).mapExp(200, 8000);   // trackpad mapped exponentially to Hz
+~a.fx(\lpf, ~cut);                  // ...sculpting the canvas
+~m = \ping.deg("0 3 5", 0.25, amp: ~cut.pat.linlin(200, 8000, 0.1, 0.5));
+                                    // ...and, via .pat, inside a pattern
+::
+
+SUBSECTION:: Transforming patterns
+
+These return new patterns, so they chain — and because everything is a real
+link::Classes/Pattern::, raw pattern classes still compose around them. See
+link::Classes/Pattern#-fast#fast:: and friends.
+
+code::
+~hh = \s.hits("x.xx", 0.25).fast(2);          // double time
+~m  = ~m.source.slow(2);                       // half time
+~m  = \ping.deg("0 3 5 7", 0.25).sometimes(0.2, _.fast(4));  // occasional flurries
+~sn = \s.hits(3, 8).jux(_.fast(2));            // straight left, doubled right
+~k  = Pwrand([\k.hits(3, 8), \k.hits(5, 8)], [0.9, 0.1], inf);  // raw SC, same canvas
+::
+
+SECTION:: Why it works this way
+
+definitionlist::
+## Everything returns a plain object
+|| Terse words are sugar, never a wall. When a word can't say what you mean, drop
+to raw SuperCollider mid-expression — the escape hatch is always open.
+## Numbers become named controls
+|| When you write code::~a.fx(\lpf, 800)::, the 800 is lifted into a named control
+(code::\lpf_freq::) with a registered link::Classes/Spec::. That means you can
+later code::~a.set(\lpf_freq, 1200)::, a GUI can slider it, and presets can store
+it. Nothing is a magic constant.
+## The grid is opt-in
+|| code::grid(4):: quantizes pattern rebinds so edits always land musically, but
+drones and signal wiring ignore it — continuous sound lives in continuous time.
+::
+
+SECTION:: Troubleshooting
+
+definitionlist::
+## "Synesthesia: no ProxySpace found — run Setup first"
+|| The words need code::p:: to hold a pushed ProxySpace. Run your setup file, or
+the minimal environment above.
+## "Synesthesia: no sample folder ... in d"
+|| code::\k.hits:: looks up code::d["k"]::. Check code::d.keys:: for what your
+setup actually loaded; keys are case-sensitive folder names.
+## "rec: server not running"
+|| code::rec():: records through the real input, so the server must be booted.
+## A drone word errors mentioning DFM1
+|| The code::\dfm:: recipe needs sc3-plugins. Use code::\tone:: or code::\saw::,
+or install sc3-plugins.
+## Effects seem to do nothing
+|| Effects insert on the proxy you call them on. If you routed a proxy into
+another (code::.feeds::), sculpt the emphasis::destination:: to affect the sum.
+::
+
+SECTION:: Where this is going
+
+Synesthesia is being built in phases. This page documents the current audio
+language. Planned next: a perceptual "painting" register (colors as timbre
+coordinates, tools as applicators), an auto-generated control panel driven by the
+named-controls substrate, and visuals that render the same gesture stream. The
+design principle throughout: nothing auxiliary ever needs typed commands during a
+performance.

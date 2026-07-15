@@ -1,0 +1,162 @@
+INSTANCEMETHODS::
+
+subsection:: Synesthesia spawners
+
+The following methods are added by the Synesthesia quark
+(see link::Guides/Synesthesia::). A link::Classes/Symbol:: names sound material:
+a sample folder in the dictionary code::d::, a link::Classes/SynthDef::, or a
+drone recipe. Each method returns a plain SuperCollider object, so results compose
+with any raw pattern or proxy code.
+
+METHOD:: hits
+A drum/sample pattern from the sample folder code::d[this.asString]::, as a
+link::Classes/Pbind::. Two call forms:
+
+strong::Step-string form:: — code::\k.hits("x..X 0.2.")::. Each character is one
+step: code::x:: a hit, code::X:: an accented hit, a digit a hit playing that
+numbered sample variant from the folder, code::.:: a rest. Spaces and code::|:: are
+ignored (use them to group visually). Rests are folded into onset-to-onset
+durations; a leading rest becomes a real link::Classes/Rest:: event so the phrase
+keeps its offbeat placement.
+
+strong::Euclidean form:: — code::\k.hits(3, 8):: spreads 3 hits as evenly as
+possible over 8 sixteenth-note steps (via the Bjorklund quark's
+code::Pbjorklund2::).
+
+argument:: a
+a step link::Classes/String::, or the euclidean hit count.
+argument:: b
+step-string form: seconds-per-step in beats (default 0.25, i.e. sixteenths).
+euclidean form: the number of steps (default 8).
+argument:: amp
+base amplitude (default 1). Accents multiply this by strong::accent::.
+argument:: inst
+the instrument SynthDef (default code::\bplay::).
+argument:: buf
+which sample variant of the folder to use when no digit picks one (default 0).
+argument:: rot
+euclidean form only: rotation offset of the pattern (default 0).
+argument:: accent
+amplitude multiplier for code::X:: steps (default 1.4).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~k = \k.hits("x..x..x.");            // syncopated kick, eighth-note grid
+~h = \s.hits("x.xx", 0.25, amp: 0.6); // sixteenths
+~v = \s.hits("0.1. 0.11");            // digits choose d["s"][0] and d["s"][1]
+~e = \k.hits(5, 8, rot: 2);           // rotated euclid
+// still a real Pbind — wrap it in anything:
+~k = Pwrand([\k.hits(3, 8), \k.hits(5, 8)], [0.9, 0.1], inf);
+::
+
+METHOD:: deg
+A melodic pattern of scale degrees on the SynthDef named by this symbol, as a
+link::Classes/Pbind::. The SynthDef's pitch argument must be named code::freq::
+so SuperCollider's scale machinery (scale/root/octave/degree) can drive it.
+
+The degree string holds integers (negatives allowed), code::[0 2 4]:: bracket
+groups for chords, and code::.:: or code::~:: for rests: code::"0 3 5 [0 2 4] . 7"::.
+
+argument:: degrees
+a degree link::Classes/String::, or an array of degrees.
+argument:: dur
+beats per event (default 0.5).
+argument:: oct
+octave (default 5, the middle octave).
+argument:: amp
+amplitude (default 0.3).
+argument:: scale
+a link::Classes/Scale::. Defaults to code::n.scale:: if you keep a session event
+code::n::, else code::d[\scale]::, else minor.
+argument:: root
+scale root in semitones above C (default 0).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~m = \ping.deg("0 3 5 7", 0.25);
+~m2 = \ping.deg("0 . 3 . [0 2 4] .", 0.5, oct: 4, scale: Scale.dorian);
+~m3 = \ping.deg("-3 0 4 7", 0.25).fast(2);   // transforms chain
+::
+
+METHOD:: chord
+A harmony pattern from chord names, as a link::Classes/Pbind:: using the
+code::\note:: key. Requires the ChordSymbol library, whose symbols (like
+code::\Cm7:: or code::\Fm9_3:: — name, optional octave digit, optional duration
+after underscores) embed directly in pattern streams.
+argument:: symbols
+a space-separated link::Classes/String:: of chord names, or an array of Symbols.
+argument:: dur
+beats per chord (default 4).
+argument:: amp
+amplitude (default 0.3).
+argument:: oct
+octave offset from the middle octave (default 0).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~pads = \ping.chord("Cm7 Fm9 Ab6 G7", 4);
+~pads2 = \ping.chord("Cm7_3 Cm7_4", 8, oct: -1);   // explicit octaves per chord
+::
+
+METHOD:: drone
+A drone link::Classes/Function:: built from the recipe this symbol names in
+link::Classes/Synesthesia#*droneRecipes:: (currently code::\dfm:: — a
+self-oscillating filter, requires sc3-plugins — plus code::\tone:: and
+code::\saw::; unknown symbols fall back to code::\tone::). Assign the result to a
+proxy to make it sound. The root may be a proxy (the usual case — move the root,
+everything follows), a function, or a number.
+argument:: root
+the fundamental, in Hz: a link::Classes/NodeProxy::, function or number (default 55).
+argument:: mult
+harmonic multiple of the root (default 1).
+argument:: wob
+rate of the recipe's slow internal modulation in Hz; becomes the named control
+code::\wob:: (default 0.1).
+argument:: amp
+amplitude; becomes the named control code::\amp:: (default 0.3).
+returns:: a link::Classes/Function::
+discussion::
+code::
+~r = { 55 };
+~a = \tone.drone(~r);        ~a.play;
+~b = \saw.drone(~r, 2, wob: 0.3, amp: 0.2); ~b.play;
+~r = { 65 };                 // retune the root: both drones follow
+~a.set(\wob, 1);             // the lifted controls are live
+::
+
+METHOD:: stack
+Like link::#-drone::, but sums the recipe across an array of harmonic multiples
+inside one proxy — a chord of partials as a single sculptable object. Amplitude is
+divided by the number of partials.
+argument:: root
+as in link::#-drone::.
+argument:: mults
+array of harmonic multiples (default code::[1, 2, 4]::).
+argument:: wob
+as in link::#-drone:: (one shared control for all partials).
+argument:: amp
+total amplitude across the stack.
+returns:: a link::Classes/Function::
+discussion::
+code::
+~a = \dfm.stack(~r, [1, 2, 4, 6]); ~a.fade(8).play;
+~a.fx(\lpf, 900);    // sculpt the whole stack at once
+::
+
+subsection:: Synesthesia control words
+
+METHOD:: pad
+The trackpad/mouse position as a control signal — called as code::pad(\x):: or
+code::pad(\y):: (function-call syntax dispatches to the Symbol). Returns a
+control-rate link::Classes/NodeProxy:: in 0..1 (built on link::Classes/MouseX::/
+link::Classes/MouseY::, so it reads the pointer wherever it is — no window focus
+needed). Map it into a useful range with
+link::Classes/NodeProxy#-mapExp#mapExp:: or
+link::Classes/NodeProxy#-mapLin#mapLin::.
+returns:: a control-rate link::Classes/NodeProxy::
+discussion::
+code::
+~cut = pad(\x).mapExp(200, 8000);
+~a.fx(\lpf, ~cut);            // ride the filter with the trackpad
+~m = \ping.deg("0 3 5", 0.25, amp: pad(\y).pat.linlin(0, 1, 0.05, 0.4));
+::

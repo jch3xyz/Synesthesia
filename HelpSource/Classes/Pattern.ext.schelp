@@ -1,0 +1,58 @@
+INSTANCEMETHODS::
+
+subsection:: Synesthesia transform words
+
+The following methods are added by the Synesthesia quark
+(see link::Guides/Synesthesia::). Each returns a strong::new:: pattern, so they
+chain freely and the results still compose with raw pattern classes. They are
+meant for event patterns (things with a code::\dur::).
+
+METHOD:: fast
+Play this pattern faster by scaling every duration down.
+argument:: factor
+2 means twice as fast (default 2).
+returns:: a new link::Classes/Pattern::
+discussion::
+code::
+~h = \s.hits("x.xx", 0.25).fast(2);
+::
+
+METHOD:: slow
+The inverse of link::#-fast::.
+argument:: factor
+2 means half speed (default 2).
+returns:: a new link::Classes/Pattern::
+
+METHOD:: sometimes
+Occasionally play a transformed variant: time is cut into windows of
+strong::beats::, and at each window a coin is flipped — with probability
+strong::prob:: the window plays code::func.value(this)::, otherwise the original.
+This gives controlled unpredictability that always resolves back to the source
+material.
+argument:: prob
+probability per window, 0..1 (default 0.25).
+argument:: func
+the transformation, receiving the original pattern — e.g. code::_.fast(4)::.
+argument:: beats
+window length in beats (default 4 — one bar at the usual grid).
+returns:: a new link::Classes/Pattern::
+discussion::
+code::
+~m = \ping.deg("0 3 5 7", 0.25).sometimes(0.2, _.fast(4));      // rare flurries
+~k = \k.hits(3, 8).sometimes(0.1, { |p| p.jux(_.fast(2)) }, 8); // any function works
+::
+
+METHOD:: jux
+Juxtapose (after TidalCycles' code::jux::): the original pattern panned to one
+side, a transformed copy panned to the other — instant stereo interplay from one
+idea.
+argument:: func
+the transformation applied to the right-hand copy.
+argument:: spread
+pan amount, 0..1 (default 0.7).
+returns:: a new link::Classes/Pattern:: (a link::Classes/Ppar:: of the two copies)
+discussion::
+code::
+~sn = \s.hits(3, 8).jux(_.fast(2));
+~m  = \ping.deg("0 3 5 7", 0.5).jux(_.slow(2), spread: 1);
+::

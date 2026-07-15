@@ -1,17 +1,22 @@
 TITLE:: Synesthesia
-summary:: A live-coding vocabulary where the patch is the canvas and patterns are brushes
-categories:: Live Coding
-related:: Overviews/JITLib
+summary:: The core class of the Synesthesia live-coding vocabulary
+categories:: Live Coding>Synesthesia
+related:: Guides/Synesthesia, Overviews/JITLib
 
 DESCRIPTION::
-Synesthesia is a personal live-coding language layered over JITLib/ProxySpace.
-Its registers: painting words for timbre and texture (colors as HSV timbre
-coordinates, tools as applicators), music words for pitch and time, systems words
-for topology — all evaluating to plain SuperCollider objects so raw SC composes
-anywhere.
+Synesthesia is a live-coding vocabulary layered over link::Overviews/JITLib:: —
+see link::Guides/Synesthesia:: for the guide, which is the right starting point.
+This class is the machinery behind the words: it finds the session's
+link::Classes/ProxySpace:: and sample dictionary, holds the drone and effect
+recipe registries, lifts numeric parameters into named controls, allocates proxy
+slots for effects and wiring, and provides the (unit-tested, pure) parsers for
+step and degree notation.
 
-This is the Phase 0 skeleton. The vocabulary arrives in Phases 1–2; see the
-Roadmap in the author's Live-Coding-With-SuperCollider repository.
+You rarely call these methods directly while performing; the words on
+link::Classes/Symbol::, link::Classes/NodeProxy::, link::Classes/SimpleNumber::,
+link::Classes/String:: and link::Classes/Pattern:: call them for you. They are
+documented here for extending the system — adding recipes is the intended way to
+grow your palette.
 
 CLASSMETHODS::
 
@@ -20,3 +25,119 @@ The quark version string.
 
 METHOD:: dir
 The quark's root folder on disk.
+
+subsection:: Session context
+
+METHOD:: space
+The performance ProxySpace: the interpreter variable code::p:: if it holds a
+ProxySpace, else the current environment if it is one. Warns and returns
+code::nil:: if neither — the words then do nothing rather than error.
+
+METHOD:: samples
+The sample dictionary (interpreter variable code::d::), or code::nil:: if unset.
+Keys are folder-name strings; values are Arrays of link::Classes/Buffer::s.
+
+METHOD:: folder
+The Buffer array for one sample folder; throws a descriptive error for unknown
+names (a typo mid-performance should fail loudly at evaluation, not silently).
+argument:: name
+folder name (Symbol or String)
+
+METHOD:: scale
+The session scale, resolved in order: code::n.scale:: (if you keep a session
+event in code::n::), then code::d[\scale]::, then link::Classes/Scale#*minor::.
+
+subsection:: Recipe registries
+
+METHOD:: droneRecipes
+An link::Classes/IdentityDictionary:: of drone recipes used by
+link::Classes/Symbol#-drone#drone:: and link::Classes/Symbol#-stack#stack::. Each
+value is a function code::{ |root, mult, wob, amp| ...UGens... }:: returning a
+signal; code::root:: arrives already resolved to a signal. Add your own:
+code::
+Synesthesia.droneRecipes[\bell] = { |root, mult = 1, wob = 0.1, amp = 0.3|
+	var f = root * mult;
+	Ringz.ar(Dust.ar(2), [f, f * 1.02], 2, \amp.kr(amp) * 0.3).tanh
+};
+~b = \bell.drone(~r); ~b.play;
+::
+
+METHOD:: fxRecipes
+An link::Classes/IdentityDictionary:: of effect recipes used by
+link::Classes/NodeProxy#-fx#fx::. Each value is an link::Classes/Event:: with
+code::func:: (code::{ |in, val| ... }::), code::default:: (the value used when
+none is given) and code::ctl:: (the named-control name the value is lifted to).
+code::
+Synesthesia.fxRecipes[\chorus] = (default: 0.3, ctl: \chorus_mix, func: { |in, val|
+	var wet = DelayC.ar(in, 0.05, LFNoise1.kr(0.3).range(0.01, 0.03));
+	XFade2.ar(in, wet, (val * 2) - 1)
+});
+~a.fx(\chorus, 0.4);
+::
+
+subsection:: Signal and control lifting
+
+METHOD:: signalOf
+Resolve a parameter that may be a link::Classes/NodeProxy:: (read at control
+rate), a link::Classes/Function:: (evaluated), or a number — used inside UGen
+graphs so words accept any of the three interchangeably.
+argument:: thing
+argument:: default
+used when code::thing:: is code::nil::
+
+METHOD:: controlOf
+Like link::#*signalOf::, but numbers are lifted into a
+link::Classes/NamedControl:: named strong::name:: — the mechanism behind design
+rule 2 ("no magic constants"): every number a word receives stays reachable via
+code::.set::, GUIs and presets.
+argument:: name
+the control name (should have a registered link::Classes/Spec::)
+argument:: val
+
+subsection:: Slot bookkeeping
+
+METHOD:: slotFor
+The proxy slot index (10 and up) assigned to strong::key:: on strong::proxy::,
+allocating the next free one on first use. Keys are effect names or, for wiring,
+the source proxy itself. Slots 0–9 are never touched — they remain yours.
+argument:: proxy
+argument:: key
+
+METHOD:: freeSlot
+Release a slot assignment (used by link::Classes/NodeProxy#-unfx#unfx::).
+argument:: proxy
+argument:: key
+
+subsection:: Parsers
+
+Both parsers are pure functions with unit tests (run
+code::TestSynesthesiaParsers.run::).
+
+METHOD:: parseHits
+Parse step notation into a List of Events code::(dur:, amp:, index:, rest:)::
+with plain numbers — code::x:: hit, code::X:: accent, digit variant-picking hit,
+code::.:: rest (folded into onset-to-onset durations; leading rests kept as rest
+events), spaces/code::|:: ignored.
+argument:: string
+argument:: step
+beats per character (default 0.25)
+argument:: amp
+base amplitude (default 1)
+argument:: accent
+multiplier for code::X:: (default 1.4)
+discussion::
+code::
+Synesthesia.parseHits("x.X.", 0.25, 1);
+// -> [ (dur: 0.5, amp: 1, index: nil, rest: false),
+//      (dur: 0.5, amp: 1.4, index: nil, rest: false) ]
+::
+
+METHOD:: parseDegs
+Parse degree notation into an Array of Integers, Arrays (from code::[0 2 4]::
+bracket chords) and code::\rest:: markers (from code::.:: or code::~::).
+argument:: string
+discussion::
+code::
+Synesthesia.parseDegs("0 3 [0 2 4] . -3");
+// -> [ 0, 3, [0, 2, 4], \rest, -3 ]
+::

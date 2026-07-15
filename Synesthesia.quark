@@ -5,7 +5,7 @@
 	copyright: "© 2026 John Holmes",
 	license: "GPL-3.0-or-later",
 	version: "0.1.0",
-	schelp: "Classes/Synesthesia",
+	schelp: "Guides/Synesthesia",
 	dependencies: [
 		"Bjorklund",
 		"BatLib",

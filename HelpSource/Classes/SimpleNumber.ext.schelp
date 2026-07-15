@@ -1,0 +1,65 @@
+INSTANCEMETHODS::
+
+subsection:: Synesthesia control words
+
+The following methods are added by the Synesthesia quark
+(see link::Guides/Synesthesia::). They are designed to be called in function-call
+style — code::bpm(120):: is SuperCollider syntax for code::120.bpm:: — so they read
+as bare performance words.
+
+METHOD:: bpm
+Set the tempo of the performance clock (the link::Classes/ProxySpace::'s
+link::Classes/TempoClock::) in beats per minute. Creates the tempo clock if the
+space doesn't have one yet.
+returns:: the receiver (the BPM value)
+discussion::
+code::
+bpm(120);   // 2 beats per second
+bpm(90);    // slow down; running patterns follow immediately
+::
+
+METHOD:: grid
+Set the quantization of the current ProxySpace: re-evaluated proxies and patterns
+take effect on the next boundary of this many beats, so edits land musically no
+matter when you press evaluate. code::grid(0):: disables quantization (changes are
+immediate, subject to fade times).
+returns:: the receiver (the beat count)
+discussion::
+code::
+grid(4);            // changes land on the next 4-beat bar
+~k = \k.hits(5, 8); // ...evaluate any time; it starts on the bar
+grid(0);            // back to immediate
+::
+
+METHOD:: hush
+Fade every proxy in the current ProxySpace to silence over the receiver, in
+seconds. The proxies are stopped but not removed — their definitions remain, so
+anything can be brought back with code::.play::. This is the musical alternative to
+Cmd-. (which cuts sound instantly).
+returns:: the receiver (the fade time)
+discussion::
+code::
+hush(10);    // long musical exit
+hush(0.5);   // abrupt, but still not a click
+~a.play;     // any proxy can come back afterwards
+::
+
+METHOD:: rec
+Live sampler: capture this many emphasis::beats:: (at the current clock tempo) of
+the first hardware sound input into a new mono link::Classes/Buffer::, and append
+it to the sample dictionary under strong::key:: (default code::"live"::). The
+capture starts immediately and runs in the background; the buffer is registered
+right away, so you can already write the pattern that will play it.
+argument:: key
+the sample-dictionary key (folder name) to append to. Default code::"live"::.
+returns:: the new link::Classes/Buffer:: (or code::nil:: if the server is off)
+discussion::
+code::
+rec(8);                                    // capture 8 beats from the mic/input
+// ...play or speak into the input...
+~g = \live.hits("x...", inst: \bplaym);    // chop the capture (mono player)
+~g.play;
+rec(16, "voice");                          // separate folders accumulate takes
+::
+note:: The capture is mono; play it with a mono-buffer instrument such as the
+conventional code::\bplaym::. ::

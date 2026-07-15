@@ -4,8 +4,15 @@ A live-coding vocabulary for SuperCollider where **the patch is the canvas and
 patterns are brushes**. Layered over JITLib/ProxySpace; every terse form evaluates
 to a plain SuperCollider object, so raw SC composes anywhere.
 
-Status: **Phase 0 — skeleton.** The language (graph words, pattern brushes, the
-painting register) arrives in Phases 1–2. Design rationale and the build roadmap
+Status: **Phase 1 — the MVP audio language is real** (bare control words, step/degree
+notation, drones, effects, wiring, bridges, pattern transforms). The painting
+register (colors/tools) arrives in Phase 2.
+
+**Documentation:** open `Guides/Synesthesia` in the SuperCollider help browser for a
+complete novice-friendly guide with runnable examples (it includes a minimal
+environment using SC's bundled sounds, so nothing else is required). Every word is
+also documented on its home class (NodeProxy, Symbol, String, SimpleNumber, Pattern)
+via extension help files. Design rationale and the build roadmap
 live in the companion repo
 ([Live-Coding-With-SuperCollider](https://github.com/jch3xyz/Live-Coding-With-SuperCollider)):
 `Design Notes.md`, `Companion Quarks.md`, `Roadmap.md`, `Vocabulary Sketch.scd`.

@@ -1,0 +1,165 @@
+INSTANCEMETHODS::
+
+subsection:: Synesthesia sculpt words
+
+The following methods are added by the Synesthesia quark
+(see link::Guides/Synesthesia::). Effects and wiring occupy the proxy's source
+slots from index 10 upward, so your own use of slots 0–9 is untouched. Numeric
+parameters are lifted into named controls (with registered link::Classes/Spec::s),
+so everything remains reachable via code::.set::, GUIs and presets.
+
+METHOD:: fx
+Insert (or retune) a named effect on this proxy, in place, after its source and any
+previously added effects. Recipes currently available: code::\lpf:: and
+code::\hpf:: (resonant filters; the value is the cutoff in Hz), code::\verb:: and
+code::\delay:: (the value is the wet mix 0..1), code::\dist:: (drive 0..1),
+code::\crush:: (bitcrush amount 0..1, requires sc3-plugins), code::\wide:: (stereo
+width 0..2) and code::\dc:: (DC-blocker). The registry lives in
+link::Classes/Synesthesia#*fxRecipes:: and is designed to be extended.
+
+The value may be a number (lifted to a named control such as code::\lpf_freq::), or
+any live signal — a control proxy, another Synesthesia word.
+argument:: name
+the effect's name in the recipe registry.
+argument:: val
+the effect's main parameter (number, proxy, or function). Defaults per recipe.
+returns:: this proxy (chainable)
+discussion::
+code::
+~a.fx(\lpf, 1200).fx(\verb, 0.3);   // insert two effects, chained call
+~a.fx(\lpf, 500);                    // same name retunes in place (crossfaded)
+~a.set(\lpf_freq, 2000);             // the lifted control is live
+~a.fx(\lpf, pad(\x).mapExp(100, 8000));  // or drive it with a signal
+::
+
+METHOD:: unfx
+Remove a named effect added with link::#-fx::.
+argument:: name
+the effect's name.
+returns:: this proxy
+
+METHOD:: wide
+Stereo width via mid/side processing: 0 is mono, 1 unchanged, up to 2 exaggerated.
+Sugar for code::this.fx(\wide, width)::.
+argument:: width
+0..2 (default 1)
+returns:: this proxy
+
+METHOD:: dc
+Insert a DC blocker (link::Classes/LeakDC::) — useful hygiene for feedback patches
+and chaotic sources. Sugar for code::this.fx(\dc, 1)::.
+returns:: this proxy
+
+METHOD:: fade
+Set this proxy's crossfade time, returning the proxy so it chains with
+code::.play::.
+argument:: seconds
+the new code::fadeTime:: (default 4)
+returns:: this proxy
+discussion::
+code::
+~a = \tone.stack(~r, [1, 2, 4]);
+~a.fade(12).play;    // long, painterly transitions from here on
+::
+
+subsection:: Synesthesia wire words
+
+METHOD:: feeds
+Mix this proxy into another proxy's canvas: the signal enters strong::target:: at a
+low slot, so it passes through everything strong::target::'s link::#-fx:: chain
+does. The amount is lifted to a named control (code::<thisName>_feed::). Use it
+for layering sources into one sculptable object, or for deliberate feedback
+wiring.
+argument:: target
+the receiving link::Classes/NodeProxy::.
+argument:: amt
+mix amount (default 0.2).
+returns:: this proxy
+discussion::
+code::
+~t = \tone.drone(~r, 1.5); ~t.play;
+~t.feeds(~a, 0.15);     // ~t is now also inside ~a — ~a.fx sculpts the sum
+::
+
+METHOD:: route
+Send this proxy to a standing effect return created in your setup: by convention a
+return named code::\verb:: is a pair of proxies code::~verbIn:: (a silent input
+mix) and code::~verb:: (the effect reading it). code::route:: adds this proxy,
+scaled, into code::~<name>In::. The amount is lifted to a named control unique to
+this source and return.
+
+note:: This word is called code::route:: rather than send because
+link::Classes/NodeProxy:: already has a code::send:: method (it re-sends synths).
+::
+argument:: returnName
+the return's base name (default code::\verb::, expecting code::~verbIn::).
+argument:: amt
+send amount (default 0.3).
+returns:: this proxy
+discussion::
+code::
+~k.route(\verb, 0.2);     // a little reverb on the kick
+~m.route(\delay, 0.5);    // more delay on the melody
+::
+
+METHOD:: duck
+Sidechain: dip this proxy's level by another proxy's amplitude envelope — the
+classic "the kick carves the drone" move, and a bridge from the pattern world into
+the signal world. The amount is lifted to the named control code::\duck_amt::.
+argument:: source
+the proxy whose loudness does the ducking.
+argument:: amt
+depth, 0..2 — at 1 a loud source fully silences this proxy (default 0.5).
+argument:: attack
+envelope follower attack in seconds (default 0.01).
+argument:: release
+envelope follower release in seconds (default 0.25).
+returns:: this proxy
+discussion::
+code::
+~k = \k.hits("x...x...");
+~k.play;
+~a.duck(~k, 0.6);         // the drone breathes with the kick
+~a.set(\duck_amt, 1.2);   // deepen it live
+::
+
+subsection:: Synesthesia bridge words
+
+METHOD:: follow
+This proxy's amplitude envelope as a new control-rate proxy (named
+code::<thisName>_env:: in the space) — the general pattern→signal bridge. Use the
+result anywhere a signal fits: modulation, other proxies, link::#-fx:: values.
+argument:: lagTime
+smoothing, lifted to the named control code::\lag:: (default 0.1).
+returns:: a control-rate link::Classes/NodeProxy::
+discussion::
+code::
+~env = ~k.follow;
+~shimmer = { SinOsc.ar([2000, 2003]) * ~env.kr(1) * 0.1 }; ~shimmer.play;
+::
+
+METHOD:: pat
+This proxy's current control value as pattern material — the signal→pattern
+bridge. Sugar for BenoitLib's code::Pkr(this):: (BenoitLib must be installed).
+returns:: a pattern that repeatedly yields the proxy's latest value
+discussion::
+code::
+~m = \ping.deg("0 3 5 7", 0.25, amp: pad(\y).pat.linlin(0, 1, 0.05, 0.5));
+::
+
+METHOD:: mapExp
+A new control proxy mapping this proxy's 0..1 output exponentially into
+strong::lo::..strong::hi:: — the right curve for frequencies and times.
+argument:: lo
+argument:: hi
+returns:: a new control-rate link::Classes/NodeProxy::
+discussion::
+code::
+~cut = pad(\x).mapExp(200, 8000);   // perceptually even filter sweep
+::
+
+METHOD:: mapLin
+As link::#-mapExp:: but linear — for amounts, mixes and pans.
+argument:: lo
+argument:: hi
+returns:: a new control-rate link::Classes/NodeProxy::
