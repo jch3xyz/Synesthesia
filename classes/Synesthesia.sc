@@ -33,11 +33,15 @@ Synesthesia {
 		Spec.add(\duck_amt, [0, 2, \lin, 0, 0.5]);
 
 		droneRecipes = IdentityDictionary[
-			// self-oscillating DFM1 fed by a detuned sine pair at the root
+			// self-oscillating DFM1 fed by a detuned sine pair at the root.
+			// DFM1 starts from zero filter state and won't ring up from a whisper
+			// (co34pt's "evaluate twice" quirk) — so keep the input hot, seed it
+			// with a little noise, and keep resonance near/above self-oscillation.
 			\dfm -> { |root, mult = 1, wob = 0.1, amp = 0.3|
 				var f = root * mult;
-				var res = SinOsc.kr(\wob.kr(wob), Rand(0, 6.28)).range(0.9, 1.1);
-				DFM1.ar(SinOsc.ar([f, f * 1.01], 0, 0.1), f * 2, res, 1, 0, 0.0003, \amp.kr(amp))
+				var res = SinOsc.kr(\wob.kr(wob), Rand(0, 6.28)).range(0.98, 1.15);
+				var in = SinOsc.ar([f, f * 1.01], 0, 0.25) + PinkNoise.ar(0.003);
+				DFM1.ar(in, f * 2, res, 1, 0, 0.002, \amp.kr(amp))
 			},
 			// near-pure partial with slow stochastic detune beating
 			\tone -> { |root, mult = 1, wob = 0.1, amp = 0.3|
