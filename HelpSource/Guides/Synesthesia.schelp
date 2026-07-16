@@ -1,7 +1,13 @@
 TITLE:: Synesthesia — a live coding vocabulary
 summary:: Getting started with Synesthesia: the patch is the canvas, patterns are brushes
 categories:: Live Coding>Synesthesia
-related:: Classes/Synesthesia, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
+related:: Reference/Synesthesia-Reference, Classes/Synesthesia, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
+
+note::
+This guide is the narrative introduction. The strong::complete vocabulary on a
+single page:: — every word, argument and example, always describing the current
+version of the system — is link::Reference/Synesthesia-Reference::.
+::
 
 SECTION:: What Synesthesia is
 

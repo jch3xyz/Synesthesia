@@ -1,0 +1,264 @@
+TITLE:: Synesthesia Reference
+summary:: The complete Synesthesia vocabulary on one page
+categories:: Live Coding>Synesthesia
+related:: Guides/Synesthesia, Classes/Synesthesia
+
+DESCRIPTION::
+This page documents strong::every word Synesthesia currently provides::, organized
+by family, so the whole library can be understood from a single document. For a
+narrative introduction with a runnable minimal environment, read
+link::Guides/Synesthesia:: first; for any single word in its native habitat, each
+is also documented on its home class (link::Classes/NodeProxy::,
+link::Classes/Symbol::, link::Classes/SimpleNumber::, link::Classes/String::,
+link::Classes/Pattern::).
+
+strong::Coverage::: this page describes the full vocabulary as of Phase 1 (the MVP
+audio language). It is rewritten as a whole whenever the vocabulary changes — if a
+word here disagrees with the code, the page is a bug.
+
+SECTION:: The system in four sentences
+
+Synesthesia layers a terse vocabulary over link::Overviews/JITLib::. A persistent
+signal graph (drones, effects, wiring) is the emphasis::canvas::; event patterns
+are emphasis::brushes:: applied to it. Every word evaluates to a plain
+SuperCollider object — link::Classes/Function::, link::Classes/Pbind:: or
+link::Classes/NodeProxy:: — so shorthand and raw SC compose freely in one
+expression. Every numeric parameter a word receives is lifted into a named control
+with a registered link::Classes/Spec::, so nothing is a magic constant: everything
+stays reachable by code::.set::, GUIs and presets.
+
+SECTION:: Environment contract
+
+The words assume, from a setup file evaluated before playing: a booted server; a
+link::Classes/ProxySpace:: pushed and held in interpreter variable code::p::, with
+a tempo clock; a sample dictionary in code::d:: (folder-name String keys →
+Arrays of link::Classes/Buffer::s); sample-player and melodic SynthDefs (pitch
+argument named code::freq::); optionally standing effect returns
+(code::~verbIn::/code::~verb::, code::~delayIn::/code::~delay::) for
+link::#route::. Dependencies: Bjorklund (euclid), BenoitLib (link::#pat::),
+sc3-plugins (the code::\dfm:: recipe, code::\crush:: effect). Words that cannot
+find the environment warn and do nothing rather than error.
+
+SECTION:: Control words
+
+Bare words for the frame of the performance. (SuperCollider parses
+code::bpm(120):: as code::120.bpm:: — they live on the argument's class.)
+
+definitionList::
+## code::bpm(beatsPerMinute)::
+|| Tempo of the performance clock, in BPM.
+code::
+bpm(126);
+::
+## code::grid(beats)::
+|| Quantization: re-evaluations land on the next boundary of this many beats.
+code::grid(0):: makes changes immediate.
+code::
+grid(4);    // edits always land on the bar
+::
+## code::hush(seconds)::
+|| Fade emphasis::every:: proxy to silence — the musical panic button. Definitions
+survive; anything returns with code::.play::. Note this includes standing returns:
+revive with code::~verb.play; ~delay.play:: if you continue.
+code::
+hush(15);
+::
+## code::rec(beats, key)::
+|| Live sampler: capture code::beats:: of the first sound input into a new mono
+Buffer appended to code::d[key]:: (default code::"live"::). Registered
+immediately, so the pattern that plays it can be written while it records. Play
+captures with a mono instrument (conventionally code::\bplaym::).
+code::
+rec(8);
+~g = \live.hits("x...", inst: \bplaym); ~g.play;
+::
+## code::pad(\x)::, code::pad(\y)::
+|| Trackpad/mouse position as a control-rate proxy in 0..1 (server-side
+link::Classes/MouseX::/link::Classes/MouseY:: — reads the pointer anywhere on
+screen). Map into range with link::#mapExp:: / link::#mapLin::.
+code::
+~a.fx(\lpf, pad(\x).mapExp(150, 8000));
+::
+::
+
+SECTION:: Spawning sound
+
+Symbols name material: a sample folder in code::d::, a SynthDef, or a drone
+recipe. All pattern-spawners return a real link::Classes/Pbind::.
+
+definitionList::
+## code::\folder.hits(stepString, step, amp, inst, buf, rot, accent)::
+|| Drum pattern from code::d[folder]:: in step notation: code::x:: hit, code::X::
+accent (amp × accent, default 1.4), digit = hit playing that sample variant,
+code::.:: rest, spaces/code::|:: visual only. code::step:: is beats per character
+(default 0.25). Rests fold into onset-to-onset durations; leading rests are kept
+as real link::Classes/Rest:: events. Default instrument code::\bplay::.
+code::
+~k = \k.hits("x..x..x.");
+~v = \s.hits("0.1. 0.11", amp: 0.8);      // digits pick d["s"][0] / d["s"][1]
+::
+## code::\folder.hits(k, n, amp, inst, buf, rot)::
+|| Euclidean form: code::k:: hits spread over code::n:: sixteenth-note steps
+(Bjorklund), rotated by code::rot::.
+code::
+~sn = \s.hits(3, 8);
+~e  = \k.hits(5, 16, rot: 2);
+::
+## code::\synth.deg(degrees, dur, oct, amp, scale, root)::
+|| Melody of scale degrees on a SynthDef (pitch arg must be code::freq::). Degree
+strings: integers (negatives fine), code::[0 2 4]:: chords, code::.:: or
+code::~:: rests. Scale defaults to code::n.scale::, then code::d[\scale]::, then
+minor; octave defaults to 5.
+code::
+~m = \sinfb.deg("0 3 5 [0 2 4]", 0.5, oct: 3);
+::
+## code::\synth.chord(symbols, dur, amp, oct)::
+|| Named harmony via the ChordSymbol library: code::"Cm7 Fm9_3":: (name, optional
+octave digit / inversion after underscore). Uses the code::\note:: key.
+code::
+~pads = \bpfsaw.chord("Cm7 Fm9 Ab6 G7", 4);
+::
+## code::\recipe.drone(root, mult, wob, amp)::
+|| A drone link::Classes/Function:: — assign it to a proxy. Recipes:
+code::\dfm:: (self-oscillating filter, sc3-plugins), code::\tone:: (near-pure
+partial with slow beating), code::\saw:: (detuned filtered saws); unknown names
+fall back to code::\tone::. code::root:: may be a proxy (code::~r:: — move it and
+everything follows), function or number. code::wob:: (internal modulation rate)
+and code::amp:: become live named controls.
+code::
+~r = { 55 };
+~a = \dfm.drone(~r);  ~a.play;
+~b = \tone.drone(~r, 3, wob: 0.4, amp: 0.2);  ~b.play;
+::
+## code::\recipe.stack(root, mults, wob, amp)::
+|| One Function summing the recipe across harmonic multiples — a chord of partials
+as a single sculptable proxy. Amp divides across partials.
+code::
+~a = \dfm.stack(~r, [1, 2, 4, 6]);  ~a.fade(8).play;
+::
+::
+
+SECTION:: Step notation anywhere
+
+definitionList::
+## code::"x.x.".steps(step)::
+|| The string as a looping duration link::Classes/Pseq:: (rests included) for any
+code::\dur:: socket of your own patterns.
+## code::"x.X.".stepAmps(step, amp, accent)::
+|| The matching amplitude Pseq, aligned with code::.steps:: of the same string.
+code::
+~x = Pbind(\instrument, \sinfb, \degree, 0,
+	\dur, "x.Xx".steps, \amp, "x.Xx".stepAmps(amp: 0.4));
+::
+::
+
+SECTION:: Sculpting one sound
+
+All return the proxy, so they chain. Effects live on proxy slots 10+ (your slots
+0–9 are untouched); numeric values are lifted to named controls.
+
+definitionList::
+## code::~a.fx(name, val)::
+|| Insert or retune a named effect in place, crossfaded. Recipes and their
+code::val:: meaning: code::\lpf:: / code::\hpf:: cutoff Hz (controls
+code::\lpf_freq::/code::\hpf_freq::), code::\verb:: / code::\delay:: wet mix 0..1,
+code::\dist:: drive 0..1, code::\crush:: amount 0..1, code::\wide:: width 0..2,
+code::\dc:: DC-blocker. code::val:: may be a number, proxy or function.
+code::
+~a.fx(\lpf, 1200).fx(\verb, 0.3);
+~a.set(\lpf_freq, 500);                     // lifted control, live
+~a.fx(\lpf, pad(\x).mapExp(100, 8000));     // signal-driven
+::
+## code::~a.unfx(name)::
+|| Remove an inserted effect.
+## code::~a.wide(width)::
+|| Stereo width 0..2 (mid/side). Sugar for code::fx(\wide, ...)::.
+## code::~a.dc::
+|| Insert a link::Classes/LeakDC:: — hygiene for feedback and chaos.
+## code::~a.fade(seconds)::
+|| Set crossfade time, returning the proxy: code::~a.fade(12).play::.
+::
+
+SECTION:: Wiring sounds together
+
+definitionList::
+## code::~t.feeds(~a, amt)::
+|| Mix code::~t:: into code::~a::'s canvas at a low slot — it passes through
+code::~a::'s effect chain. For layering and deliberate feedback wiring. Amount
+becomes control code::<t>_feed::.
+## code::~a.route(returnName, amt)::
+|| Send to a standing return from setup (code::\verb:: expects code::~verbIn::).
+Amount becomes a per-source named control. (Named code::route:: because
+NodeProxy already has a code::send:: method.)
+## code::~a.duck(~k, amt, attack, release)::
+|| Sidechain: dip code::~a:: by code::~k::'s amplitude envelope — "the kick carves
+the drone". Depth becomes control code::\duck_amt:: (0..2; 1 fully silences at
+peak).
+code::
+~t.feeds(~a, 0.15);
+~k.route(\verb, 0.2);
+~a.duck(~k, 0.6);
+::
+::
+
+SECTION:: Bridges between signals and patterns
+
+definitionList::
+## code::~k.follow(lagTime)::
+|| The proxy's amplitude envelope as a new control proxy (code::<k>_env::) —
+pattern → signal.
+## code::~c.pat::
+|| The proxy's current value as pattern material (BenoitLib's code::Pkr::) —
+signal → pattern.
+## code::~c.mapExp(lo, hi)::, code::~c.mapLin(lo, hi)::
+|| New control proxies mapping a 0..1 signal into a range — exponential for
+frequencies/times, linear for amounts/pans.
+code::
+~env = ~k.follow;                               // drums modulate anything
+~m = \sinfb.deg("0 3 5", 0.25, amp: pad(\y).pat.linlin(0, 1, 0.05, 0.4));
+::
+::
+
+SECTION:: Transforming patterns
+
+Each returns a new link::Classes/Pattern:: — they chain, and raw pattern classes
+compose around them.
+
+definitionList::
+## code::.fast(factor)::, code::.slow(factor)::
+|| Scale all durations (default factor 2).
+## code::.sometimes(prob, func, beats)::
+|| Per window of code::beats:: (default 4), play code::func.value(pattern):: with
+probability code::prob:: — controlled surprise that resolves back to the source.
+## code::.jux(func, spread)::
+|| Original panned one side, transformed copy the other (default spread 0.7).
+code::
+~m  = \sinfb.deg("0 3 5 7", 0.25).sometimes(0.2, _.fast(4));
+~sn = \s.hits(3, 8).jux(_.fast(2));
+~k  = Pwrand([\k.hits(3, 8), \k.hits(5, 8)], [0.9, 0.1], inf);  // raw SC welcome
+::
+::
+
+SECTION:: Extending the system
+
+The intended growth path is adding recipes — see link::Classes/Synesthesia:: for
+worked examples of both:
+
+list::
+## strong::Drone recipes:: — code::Synesthesia.droneRecipes[\name] = { |root,
+mult, wob, amp| ...UGens... }:: makes code::\name.drone:: / code::\name.stack::
+work immediately.
+## strong::Effect recipes:: — code::Synesthesia.fxRecipes[\name] = (default: ...,
+ctl: \name_ctl, func: { |in, val| ... }):: makes code::~a.fx(\name, ...):: work
+immediately. Register a Spec for the control name.
+::
+
+The notation parsers (code::Synesthesia.parseHits::, code::parseDegs::) are pure
+functions with unit tests — run code::TestSynesthesiaParsers.run::.
+
+SECTION:: Maintenance rule for this page
+
+This reference is rewritten emphasis::as a whole:: whenever the vocabulary
+changes — new words are integrated into their families and existing entries are
+revised with the new context, never merely appended. The page always describes
+one coherent version of the system: the current one.
