@@ -213,35 +213,41 @@ The mono link::Classes/Buffer:: holding this break, for raw SuperCollider use.
 returns:: a link::Classes/Buffer::, or nil
 
 METHOD:: bpm
-This break's own tempo.
+This break's own tempo. emphasis::Setting:: it — code::\amen.bpm_(172):: — corrects
+a wrong guess permanently: the value is written to a code::_breaks.scd:: sidecar next
+to the audio, which is merged over the inference at every boot, and any live voice
+playing that break updates at once.
 
 note::
 Different receiver, different job: code::\amen.bpm:: emphasis::reads:: a break's
 tempo, while code::175.bpm:: emphasis::sets:: the session tempo (see
 link::Classes/SimpleNumber#-bpm::).
 ::
-returns:: a number, or nil
-
-METHOD:: len
-This break's length in beats. This is the number the engine actually uses — a wrong
-beat count is what makes a loop run at half or double speed.
-returns:: an link::Classes/Integer::, or nil
-
-METHOD:: bpm_
-Correct this break's tempo, permanently: the value is written to a
-code::_breaks.scd:: sidecar next to the audio, which is merged over the inference at
-every boot. Live voices playing it update at once.
 argument:: value
+when setting: the true tempo in BPM.
+returns:: when getting: a number, or nil
 discussion::
 code::
-\amen.bpm_(172);
-\amen.len_(8);
-Break.list;        // check what the registry now believes
+\amen.bpm;             // what the registry currently believes
+\amen.bpm_(172);       // correct it, permanently
+Break.list;            // check the whole library
 ::
 
-METHOD:: len_
-As link::#-bpm_:: but sets the length in beats.
+METHOD:: len
+This break's length in beats, with a setter that persists the same way as
+link::#-bpm::.
+
+This is the number the engine actually uses, which makes it the one worth getting
+right: a wrong beat count is what makes a loop run at half or double speed. If a
+break sounds like it is at the wrong tempo, fix this rather than reaching for
+link::Classes/NodeProxy#-speed#speed::.
 argument:: value
+when setting: the true length in beats.
+returns:: when getting: an link::Classes/Integer::, or nil
+discussion::
+code::
+\amen.len_(8);         // this loop is 8 beats, not 4
+::
 
 METHOD:: stretch
 The playback rate that would make this break fit the current session tempo.

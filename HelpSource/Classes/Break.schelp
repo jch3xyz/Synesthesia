@@ -148,12 +148,13 @@ code::vari:: on the engine and by code::chop::.
 argument:: key
 
 METHOD:: tempo
-The performance clock's tempo in beats per second.
-
-METHOD:: tempo_
-Push a tempo to every live break voice. code::bpm():: calls this, and a watcher
-calls it for tempo changes made any other way.
+The performance clock's tempo in beats per second. emphasis::Setting:: it —
+code::Break.tempo_(bps):: — pushes that tempo to every live break voice;
+code::bpm():: calls this for immediacy, and a link::Classes/SkipJack:: watcher calls
+it for tempo changes made any other way.
 argument:: bps
+when setting: beats per second.
+returns:: when getting: beats per second
 
 METHOD:: window
 The bufnum of a named grain envelope: code::\punch:: (fast attack, short tail —
