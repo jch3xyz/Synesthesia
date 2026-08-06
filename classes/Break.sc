@@ -27,7 +27,7 @@ Break {
 	classvar <>monoMode = \mix;     // \mix (true mixdown), \left, or \right
 	classvar <>bpmWindow;           // plausible source tempos, used by the duration heuristic
 	classvar <>audioExtensions;
-	classvar tempoWatcher, lastTempo, sidecarName = "_breaks.scd";
+	classvar tempoWatcher, serverWatcher, lastTempo, sidecarName = "_breaks.scd";
 
 	*initClass {
 		all = IdentityDictionary.new;
@@ -45,6 +45,7 @@ Break {
 	*scan { |dir, server|
 		var root, folders, loaded = 0, tagged = 0;
 		server = server ? Server.default;
+		this.prWatchServer;
 		this.clear;
 		this.prMakeWindows(server);
 		dir ?? { ^this };
@@ -82,6 +83,21 @@ Break {
 		all.clear;
 		order = [];
 		^this
+	}
+
+	// A server quit invalidates every Buffer we hold. Drop the references WITHOUT
+	// freeing them: after the next boot those bufnums get reissued to whatever loads
+	// first, and freeing a stale object would then free somebody else's buffer.
+	*prWatchServer {
+		serverWatcher ?? {
+			serverWatcher = { |server|
+				all.do { |entry| entry[\buf] = nil };
+				windows.clear;
+				voices.do { |voice| voice[\seq] = nil };
+			};
+			ServerQuit.add(serverWatcher);
+		};
+		^serverWatcher
 	}
 
 	// Compared as Symbols on purpose: Collection:includes tests IDENTITY, so
@@ -338,10 +354,16 @@ Break {
 		};
 		entry[\src] = \sidecar;
 		this.prWriteSidecar(entry[\folder]);
-		// live voices playing this break pick the new length up immediately
+		// live voices playing this break pick the new length up immediately —
+		// including the slice grid, which is derived from the beat count, and the
+		// sequence, which has to grow with it if it is still in source order
 		voices.keysValuesDo { |proxy, voice|
 			if(voice[\key] == entry[\key]) {
-				proxy.set(\beats, entry[\beats]);
+				voice[\steps] = (entry[\beats] * 4).min(seqSize);
+				proxy.set(\beats, entry[\beats], \steps, voice[\steps]);
+				if(voice[\ordered] == true and: { voice[\slen] != voice[\steps] }) {
+					this.writeSeq(proxy, Array.series(voice[\steps], 0, 1), true);
+				};
 				this.trig(proxy, \resync);
 			};
 		};
@@ -500,7 +522,7 @@ Break {
 
 	*unregister { |proxy|
 		var voice = voices.removeAt(proxy);
-		voice !? { voice[\seq].free };
+		voice !? { voice[\seq] !? { |b| if(b.bufnum.notNil) { b.free } } };
 		^voice
 	}
 
@@ -520,7 +542,13 @@ Break {
 	// so mushes the transient a chop is mostly made of. These are per-grain
 	// envelope shapes; the bufnum is polled per grain, so \win switches live.
 	*prMakeWindows { |server|
-		var mk = { |env| Buffer.sendCollection(server, env.discretize(1024), 1) };
+		var mk;
+		server = server ? Server.default;
+		if(server.serverRunning.not) {
+			"Break: server not running — grain windows not allocated".warn;
+			^windows
+		};
+		mk = { |env| Buffer.sendCollection(server, env.discretize(1024), 1) };
 		windows.do { |buf| if(buf.bufnum.notNil) { buf.free } };
 		windows.clear;
 		windows[\hann]  = Buffer.sendCollection(server, Signal.hanningWindow(1024), 1);
