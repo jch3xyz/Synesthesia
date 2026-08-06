@@ -131,6 +131,22 @@ TestBreak : UnitTest {
 			"a leading digit gets a prefix so the symbol stays usable");
 	}
 
+	// ----- file discovery -------------------------------------------------
+
+	test_audioExtensionMatching {
+		// Regression: Collection:includes tests IDENTITY, so ["wav"].includes("wav")
+		// is false and a String-compared extension filter silently matches nothing.
+		var dir = PathName(Platform.resourceDir +/+ "sounds");
+		var found = Break.prAudioFiles(dir);
+		this.assert(found.size > 0,
+			"finds the .wav/.aiff files SuperCollider ships in "
+			++ dir.fullPath ++ " (got " ++ found.size ++ ")");
+		this.assert(
+			found.every { |f| ["wav", "aiff", "aif", "flac"]
+				.includesEqual(f.extension.toLower) },
+			"and everything it returns really is an audio file");
+	}
+
 	// ----- the chop brush -------------------------------------------------
 
 	test_chop_buildsPattern {

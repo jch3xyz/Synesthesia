@@ -84,8 +84,13 @@ Break {
 		^this
 	}
 
+	// Compared as Symbols on purpose: Collection:includes tests IDENTITY, so
+	// ["wav"].includes("wav") is false — two equal Strings are not the same object.
+	// Symbols are interned, so identity and equality coincide. (includesEqual would
+	// also work; Symbols additionally let a user set either form on audioExtensions.)
 	*prAudioFiles { |pathName|
-		^pathName.files.select { |f| audioExtensions.includes(f.extension.toLower) }
+		var exts = audioExtensions.collect { |e| e.asString.toLower.asSymbol };
+		^pathName.files.select { |f| exts.includes(f.extension.toLower.asSymbol) }
 	}
 
 	*prAddFile { |file, folder, sidecar, server|
