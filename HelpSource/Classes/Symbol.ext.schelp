@@ -160,3 +160,89 @@ code::
 ~a.fx(\lpf, ~cut);            // ride the filter with the trackpad
 ~m = \ping.deg("0 3 5", 0.25, amp: pad(\y).pat.linlin(0, 1, 0.05, 0.4));
 ::
+
+subsection:: Synesthesia breakbeat words
+
+A link::Classes/Symbol:: also names a break — one drum loop in the
+link::Classes/Break:: registry. These are the brush and the metadata; the canvas
+words live on link::Classes/NodeProxy:: (see link::Classes/NodeProxy#-brk#brk::).
+Tutorial: link::Guides/Breaks::.
+
+METHOD:: chop
+A chop pattern: one code::\brk1:: synth per slice, so per-hit rate, panning,
+amplitude and effects are ordinary pattern work. Returns a plain
+link::Classes/Pbind::.
+
+This is the brush to code::brk::'s canvas. Use code::brk:: to sculpt texture and
+dissolve into grains; use code::chop:: when you want per-event control and pattern
+logic. Both can play the same break at once.
+
+Slice strings follow the same notation as
+link::Classes/NodeProxy#-seq#seq:: — digits then letters index slices, code::.::
+and code::~:: are rests.
+argument:: spec
+a slice string or array; nil plays the whole loop in order.
+argument:: step
+beats per chop. Defaults to one slice's worth.
+argument:: steps
+slices per loop. Defaults to sixteenths of the loop's beat length.
+argument:: amp
+default 0.5.
+argument:: vari
+1 (default) fits the chop to the tempo by repitching; 0 keeps the original pitch. A
+one-shot has no moving pointer to stretch with, which is why fitted is the default
+here.
+argument:: flip
+probability a chop plays backwards, starting at the far end of its slice.
+argument:: hold
+lifetime cap in seconds, so a runaway pattern value cannot strand a node.
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~c = \amen.chop("0325");
+~c.play;
+
+~c = \amen.chop("0.32 0123", amp: 0.4);
+~c = \amen.chop(nil, steps: 8);            // whole loop in eighths
+~c = \amen.chop("0123").fast(2);           // still a real Pbind
+~c = Pwrand([\amen.chop("0123"), \amen.chop("0321")], [0.8, 0.2], inf);
+::
+
+METHOD:: buf
+The mono link::Classes/Buffer:: holding this break, for raw SuperCollider use.
+returns:: a link::Classes/Buffer::, or nil
+
+METHOD:: bpm
+This break's own tempo.
+
+note::
+Different receiver, different job: code::\amen.bpm:: emphasis::reads:: a break's
+tempo, while code::175.bpm:: emphasis::sets:: the session tempo (see
+link::Classes/SimpleNumber#-bpm::).
+::
+returns:: a number, or nil
+
+METHOD:: len
+This break's length in beats. This is the number the engine actually uses — a wrong
+beat count is what makes a loop run at half or double speed.
+returns:: an link::Classes/Integer::, or nil
+
+METHOD:: bpm_
+Correct this break's tempo, permanently: the value is written to a
+code::_breaks.scd:: sidecar next to the audio, which is merged over the inference at
+every boot. Live voices playing it update at once.
+argument:: value
+discussion::
+code::
+\amen.bpm_(172);
+\amen.len_(8);
+Break.list;        // check what the registry now believes
+::
+
+METHOD:: len_
+As link::#-bpm_:: but sets the length in beats.
+argument:: value
+
+METHOD:: stretch
+The playback rate that would make this break fit the current session tempo.
+returns:: a number

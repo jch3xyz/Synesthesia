@@ -1,0 +1,355 @@
+TITLE:: Breaks — the breakbeat machine
+summary:: A tutorial: one drum loop, locked to your tempo, from intact to dust
+categories:: Live Coding>Synesthesia
+related:: Classes/Break, Guides/Synesthesia, Reference/Synesthesia-Reference, Classes/GrainBuf
+
+SECTION:: What this is
+
+A breakbeat machine for live coding. You point it at a folder of drum-loop
+recordings — any tempos, all mixed together — and any one of them becomes a voice
+that:
+
+list::
+## locks to your session tempo the moment it enters, whatever tempo it was recorded at,
+## dissolves continuously from the intact loop, through beat-sized and
+   sixteenth-sized chops, down to granular dust, on emphasis::one:: control,
+## reorders its own slices — in place, reversed, resequenced, euclidean-gated, or
+   at random, with a fader between order and chance,
+## swaps to a different recording mid-phrase with no gap and no re-typing.
+::
+
+It is two SynthDefs and a registry class. The registry
+(link::Classes/Break::) is the part that knows things — which files exist, what
+tempo each was recorded at, which slice plays when. The engine
+(code::\break::) is pure DSP driven by controls. That split is not cosmetic: a
+SynthDef in this system is forbidden from touching interpreter state, so
+everything that requires knowing about your library has to live in the language.
+
+SECTION:: Before you start
+
+You need the normal Synesthesia performance environment (see
+link::Guides/Synesthesia::): a booted server, a link::Classes/ProxySpace:: in
+code::p:: with a tempo clock, and the code::\break:: and code::\brk1:: SynthDefs
+loaded. If you run this repo's code::Setup.scd::, all of that is done for you,
+including the scan of your breaks folder.
+
+SUBSECTION:: A library you can try right now
+
+If you have no drum loops yet, you can still follow this whole tutorial using the
+sound that ships with SuperCollider. Evaluate this to build a two-bar loop from it
+and register it by hand:
+
+code::
+(
+s.waitForBoot({
+    var path = Platform.resourceDir +/+ "sounds/a11wlk01.wav";
+    var buf = Buffer.read(s, path, action: { |b|
+        // it is not really a drum loop, but it is 2 beats long at 120 bpm
+        Break.capture(\demo, b, 2);
+        ("registered \\demo: " ++ b.duration.round(0.01) ++ "s").postln;
+        Break.list;
+    });
+});
+)
+::
+
+Once you have real loops, put them in a folder whose name starts with
+code::breaks:: inside code::Setup/samples/:: and they load at boot. Everything
+below then works on code::\amen:: instead of code::\demo::.
+
+SECTION:: Your first chopped break
+
+code::
+p.clock.tempo = 2;        // 120 bpm, in beats per second
+~d.brk(\demo);            // put the break in a proxy
+~d.play;                  // and hear it
+::
+
+That is the whole entry gesture. code::~d:: is now a break voice: it holds the
+engine, its own slice-sequence buffer, and the loop's beat length. It is playing
+sixteenth-note chops in source order, fitted to 120 bpm.
+
+Everything from here is one word at a time, and every word leaves the voice
+running — nothing below rebuilds the synth or restarts the loop.
+
+SECTION:: grind — the one control that matters
+
+code::grind:: is the macro. It moves the material continuously from the whole loop
+to granular dust, and it has three exact stations:
+
+table::
+## code::0.0::   || one grain per loop   || the loop plays intact
+## code::0.5::   || one grain per slice  || clean chops on the grid
+## code::1.0::   || 64 grains per beat   || dust
+::
+
+code::
+~d.grind(0);       // the loop, whole
+~d.grind(0.5);     // clean sixteenth chops  (the default)
+~d.grind(0.75);    // each chop subdivided into grains — it starts to blur
+~d.grind(1);       // dust
+~d.grind(0.35);    // and back out again
+::
+
+There is no mode switch anywhere in that sweep. "Slicing" and "granulating" are
+the same mechanism at different grain sizes — a slice emphasis::is:: a big grain
+quantised to the grid — which is why the gesture is continuous.
+
+The 0.5 station is exact, not approximate: at that value the grain grid and the
+slice grid run at the same rate from the same phase, so each grain begins exactly
+where a slice begins.
+
+SUBSECTION:: over — how much each grain overruns its slot
+
+code::
+~d.over(1);        // grains abut: the default, tightest chops
+~d.over(0.6);      // grains shorter than their slot: gaps, an MPC gate feel
+~d.over(2.5);      // grains overlap: smeared, washy
+~d.over(4);        // pad territory — feed it to a reverb and forget it is a drum loop
+::
+
+The level stays put as you move this: overlap is gain-compensated, measured flat
+across the whole range.
+
+SUBSECTION:: win — the grain envelope
+
+Every grain is shaped by an envelope, and the choice matters much more for drums
+than for pads: a smooth window fades in the front of every grain, which is exactly
+where a snare's transient lives.
+
+code::
+~d.win(\punch);    // default: fast attack, short tail — chops keep their crack
+~d.win(\gate);     // near-rectangular, hardest edges
+~d.win(\hann);     // smooth: the classic granular window, mushy on drums
+~d.win(\swell);    // reversed — each grain swells in
+::
+
+SECTION:: Reordering the slices
+
+The slice order lives in a small buffer on the server that the language rewrites
+in place, so resequencing never rebuilds anything. Changes land on the next bar.
+
+code::
+~d.seq("0325");            // play slices 0, 3, 2, 5 — then repeat
+~d.seq("0.32 0.15");       // "." is a rest; spaces are just for your eyes
+~d.seq("0123456789ab");    // digits run out at 9, then letters carry on
+~d.rev;                    // the loop backwards by slice
+~d.ord;                    // back to source order
+::
+
+A sequence may be longer than one loop, and it keeps counting across loops rather
+than restarting — which gives you polymeter for free:
+
+code::
+~d.steps(16);              // 16 slices per loop
+~d.seq("0123456789abcdef012345");   // 22 steps against a 16-slice loop
+::
+
+SUBSECTION:: From order to chance, on a fader
+
+code::scr:: is the probability, per slice, that the engine ignores your sequence
+and picks a slice at random instead. It is a continuous fade between composed and
+stochastic, not a switch:
+
+code::
+~d.scr(0);         // your sequence, exactly
+~d.scr(0.25);      // mostly your sequence, with interruptions
+~d.scr(1);         // pure chance every slice
+~d.ord;            // ord and rev also reset scr to 0
+::
+
+SUBSECTION:: Euclidean gating
+
+code::
+~d.mask(5, 16);    // keep 5 of 16 slices, rest the others
+~d.mask(3, 8);
+~d.ord;            // undo
+::
+
+SUBSECTION:: Rolls
+
+code::
+~d.roll(2);        // replay the first half of each slice, twice
+~d.roll(4);        // stutter
+~d.roll(1);        // off
+::
+
+SECTION:: Pitch: fitted or preserved
+
+There are two honest ways to make a loop recorded at one tempo play at another,
+and code::vari:: is the fader between them.
+
+code::
+~d.vari(1);        // default: repitch the break to fit — the sampler / jungle sound
+~d.vari(0);        // keep the original pitch and let the grains do the stretching
+::
+
+At code::vari(1):: the whole loop is resampled to fit the bar, so it stays
+internally coherent at any code::grind:: — including code::grind(0)::, where you
+hear the plain repitched loop. This is what almost every hardware sampler did, and
+what jungle is made of.
+
+At code::vari(0):: grains play at the original speed and the emphasis::pointer::
+does the fitting. That needs grains to work: with only a few large ones, each grain
+overruns its own slice and drags the next slice's audio in behind it. So pitch
+preservation wants code::grind:: above about 0.4:
+
+code::
+~d.vari(0); ~d.grind(0.7);    // original pitch, properly stretched
+~d.speed(1.5);                // and transpose on purpose, on top of either mode
+~d.flip(0.3);                 // a third of grains play backwards
+::
+
+note::
+code::speed:: is called that, and not code::rate::, because
+link::Classes/NodeProxy:: already has a code::rate:: method (it reports audio vs
+control). Shadowing it would break JITLib.
+::
+
+SECTION:: Swapping the sample
+
+code::
+~d.brk(\think);    // a different recording, on the next bar, no gap
+~d.brk;            // no argument: cycle to the next break in the library
+::
+
+Nothing else changes. Your grind, your sequence, your overlap, your window all
+stay exactly where you left them, because they live on the proxy, not on the
+sample. The swap is gapless for a mechanical reason worth knowing: the engine's
+grain generator reads which buffer to use once per grain, so grains already
+sounding finish on the old break while new grains start reading the new one. It
+crossfades itself.
+
+If the new loop has a different beat length, the loop boundary moves — so the
+swap also realigns the grid to the bar. You can ask for that alignment at any time:
+
+code::
+~d.resync;
+::
+
+SECTION:: When the tempo changes
+
+code::
+150.bpm;           // or p.clock.tempo = 2.5
+::
+
+Every live break voice follows immediately. Tempo is not baked into anything: the
+engine takes it as a control, the registry pushes the clock's value to every
+voice, and a watcher catches tempo changes made any other way.
+
+SECTION:: Chopping with patterns instead
+
+Everything above is one long-running voice — a canvas you sculpt. Sometimes you
+want the other thing: one synth per chop, so that per-hit pitch, panning,
+amplitude and effects are ordinary pattern work. That is code::chop::, and it
+returns a plain link::Classes/Pbind:::
+
+code::
+~c = \demo.chop("0325");
+~c.play;
+
+// it is a real Pbind, so all the usual composition applies
+~c = \demo.chop("0.32 0123", amp: 0.4);
+~c = \demo.chop(nil, steps: 8);              // the whole loop in eighths
+~c = \demo.chop("0123").fast(2);             // Synesthesia transform verbs
+~c = Pwrand([\demo.chop("0123"), \demo.chop("0321")], [0.8, 0.2], inf);
+::
+
+Use the canvas voice (code::brk::) when you want to sculpt texture and dissolve
+into grains. Use the brush (code::chop::) when you want per-event control and
+pattern logic. They are happy at the same time on the same break.
+
+SECTION:: Telling it the truth about your loops
+
+A drum loop file does not say what tempo it was recorded at, so the registry
+guesses, in this order:
+
+numberedlist::
+## a bpm-tagged number in the filename — code::amen_175bpm.wav::, code::loop-175-BPM.wav::, code::bpm140.wav::;
+## a bpm-tagged or plausible number in the folder name — code::breaks175/::;
+## the duration, assuming the file is cut to a whole number of beats, preferring
+   the reading whose tempo is most break-plausible. A bare number in the filename
+   is used to break ties.
+::
+
+Check what it decided:
+
+code::
+Break.list;
+::
+
+The code::from:: column tells you which rule fired, so a guess is never invisible.
+When it guesses wrong, correct it once and it is remembered:
+
+code::
+\demo.bpm_(172);       // this loop is 172 bpm
+\demo.len_(8);         // this loop is 8 beats long
+::
+
+Either call writes a code::_breaks.scd:: sidecar next to the audio, which is
+merged over the inference at every boot. It is a plain, hand-editable file — and
+because it can also rename a break, it is how an unwieldy download becomes a short
+name you can type mid-set:
+
+code::
+Dictionary[
+	"250093__amfe__175bpm-amen-punchy-loop.wav" -> (key: 'amen', bpm: 175, beats: 4)
+]
+::
+
+warning::
+code::len_:: sets the length in beats, and beats is the number the engine actually
+uses — a wrong beat count is what makes a loop play at half or double speed. If a
+break sounds like it is running at the wrong tempo, that is the first thing to
+fix, not code::speed::.
+::
+
+SECTION:: Chopping your own playing
+
+A recording made at the session tempo needs no inference at all, so a live capture
+is the most reliable break in the library:
+
+code::
+r = rec(8);                        // capture 8 beats of input
+Break.capture(\me, r, 8);          // register it, exactly
+~e.brk(\me); ~e.play;
+~e.grind(0.6); ~e.scr(0.4);
+::
+
+SECTION:: A short set
+
+code::
+p.clock.tempo = 2.9;                        // 174 bpm
+~d.brk(\amen); ~d.play;                     // in on the bar, locked
+~d.grind(0.5); ~d.win(\punch);              // clean chops
+~d.seq("0.325476");                         // a phrase, with a rest
+~d.scr(0.35);                               // let chance in a little
+~d.brk(\think);                             // new source, same shape
+~d.roll(4);                                 // stutter
+~d.roll(1); ~d.grind(0.95); ~d.jit(0.6);    // dissolve
+~d.over(3); ~d.route(\verb, 0.5);           // and it is a pad now
+~d.ord; ~d.grind(0.4); ~d.over(1);          // reassemble
+~c = \amen.chop("0246").fast(2); ~c.play;   // a pattern layer over it
+hush(8);
+::
+
+SECTION:: What to expect, honestly
+
+list::
+## Tempo inference assumes loops are cut to whole beats. Ragged cuts will guess
+   wrong; code::Break.list:: shows you which ones were guesses, and one
+   code::len_:: fixes each permanently.
+## The middle of the code::grind:: range — where chops become grains — is
+   mathematically continuous, but whether every part of it is emphasis::musically::
+   useful is something only your ears settle. If some region turns out to be dead,
+   say so; the fix is a curve change, not an architecture change.
+## Grid alignment is performance-grade, not sample-locked-forever. It is exact when
+   a voice starts and after any code::resync::; a mid-set tempo change can leave
+   the loop boundary off the bar until you resync.
+::
+
+SECTION:: See also
+
+link::Classes/Break:: for the registry API, link::Reference/Synesthesia-Reference::
+for the whole vocabulary on one page, and code::Setup/BreakTour.scd:: in the repo
+for a scripted walk through the regions described above.

@@ -163,3 +163,153 @@ As link::#-mapExp:: but linear — for amounts, mixes and pans.
 argument:: lo
 argument:: hi
 returns:: a new control-rate link::Classes/NodeProxy::
+
+subsection:: Synesthesia breakbeat words
+
+A break voice is a persistent voice you sculpt: one drum loop, locked to the session
+tempo, sliceable from intact to dust. The tutorial is link::Guides/Breaks::; the
+registry underneath is link::Classes/Break::. Every word below leaves the voice
+running — none of them rebuild the synth.
+
+METHOD:: brk
+Put a break in this proxy. The first call installs the code::\break:: engine and
+allocates this voice's slice-sequence buffer. Later calls swap the sample on the
+next bar with no gap, keeping every other control exactly where you left it — the
+grain generator reads its buffer once per grain, so grains already sounding finish
+on the old break while new ones read the new one.
+
+With no argument, cycles to the next break in link::Classes/Break#*order::.
+argument:: name
+a break key, an index, or nil to cycle.
+returns:: this proxy
+discussion::
+code::
+~d.brk(\amen); ~d.play;
+~d.brk(\think);      // swap, gapless, on the bar
+~d.brk;              // cycle
+::
+
+METHOD:: grind
+The macro. Grain density, from the whole loop to dust, with three exact stations:
+code::0:: = one grain per loop (the loop plays intact), code::0.5:: = one grain per
+slice (clean chops on the grid), code::1:: = 64 grains per beat (dust). Continuous
+throughout — a slice emphasis::is:: a big grain quantised to the grid, so there is
+no mode switch anywhere in the sweep.
+argument:: x
+0..1 (default 0.5)
+returns:: this proxy
+
+METHOD:: over
+How far each grain overruns its own slot. Below 1 leaves gaps (an MPC gate feel), 1
+abuts, above 1 overlaps and smears toward a pad. Gain-compensated, so the level
+holds as you move it.
+argument:: x
+0.25..4 (default 1)
+returns:: this proxy
+
+METHOD:: scr
+The probability, per slice, of ignoring the sequence and picking a slice at random —
+a continuous fade from composed to stochastic, not a switch.
+argument:: x
+0..1
+returns:: this proxy
+
+METHOD:: jit
+Grain position scatter: the ingredient that turns chops into dust.
+argument:: x
+0..1
+returns:: this proxy
+
+METHOD:: vari
+How the loop is made to fit the tempo. code::1:: (default) repitches it — the
+sampler/jungle sound, coherent at any code::grind::. code::0:: keeps the original
+pitch and lets the grains stretch it, which needs grains: below about
+code::grind(0.4):: each grain overruns its slice and drags the next slice's audio
+in with it.
+argument:: x
+0..1 (default 1)
+returns:: this proxy
+
+METHOD:: speed
+Musical transpose, on top of whatever code::vari:: is doing. Negative values play
+backwards. Named code::speed:: because link::Classes/NodeProxy:: already has a
+code::rate:: method (it reports audio vs control) and shadowing it would break
+JITLib.
+argument:: x
+default 1
+returns:: this proxy
+
+METHOD:: pos
+A static offset into the loop.
+argument:: x
+0..1
+returns:: this proxy
+
+METHOD:: flip
+The probability that a grain plays backwards. A reversed grain starts at the far end
+of the region it would have played forwards, so it covers the same audio.
+argument:: x
+0..1
+returns:: this proxy
+
+METHOD:: roll
+Stutter: replay the first 1/n of each slice, n times. code::roll(1):: releases it.
+argument:: n
+1, 2, 4, 8… (default 2)
+returns:: this proxy
+
+METHOD:: win
+The grain envelope. code::\punch:: (default) has a fast attack and short tail, so
+chops keep their transient; code::\gate:: is near-rectangular and hardest;
+code::\hann:: is the classic smooth granular window, which fades in the front of
+every grain and so mushes drums; code::\swell:: is reversed.
+argument:: name
+returns:: this proxy
+
+METHOD:: seq
+The slice order, rewritten in place on the next bar — nothing is rebuilt. In a
+string, digits then letters index slices (base 36), code::.:: and code::~:: are
+rests, spaces and code::|:: are visual only. An array works too, with nil,
+negative and link::Classes/Rest:: entries as rests.
+
+A sequence may be longer than one loop; it keeps counting across loops instead of
+restarting, which gives polymeter.
+argument:: spec
+a link::Classes/String:: or link::Classes/Array::
+returns:: this proxy
+discussion::
+code::
+~d.seq("0325");
+~d.seq("0.32 0.15");                  // "." rests, spaces cosmetic
+~d.seq("0123456789abcdef012345");     // 22 steps against a 16-slice loop
+::
+
+METHOD:: ord
+Back to source order, and code::scr:: to 0.
+returns:: this proxy
+
+METHOD:: rev
+The loop backwards by slice (not by sample), and code::scr:: to 0.
+returns:: this proxy
+
+METHOD:: mask
+Euclidean gate: keep code::hits:: slices out of code::n::, rest the others. Uses the
+Bjorklund quark.
+argument:: hits
+argument:: n
+defaults to the current slice count.
+returns:: this proxy
+
+METHOD:: steps
+How many slices the loop is cut into — 16 gives sixteenths of a 4-beat loop. If the
+current order is untouched it is regenerated at the new length; a sequence you set
+by hand is left alone.
+argument:: n
+1..64 (default 16)
+returns:: this proxy
+
+METHOD:: resync
+Realign the loop, the slice grid and the sequence to the bar. Alignment is exact
+when a voice starts and after any resync; a mid-set tempo change can leave the loop
+boundary off the bar until you ask for this.
+returns:: this proxy

@@ -13,8 +13,9 @@ link::Classes/Symbol::, link::Classes/SimpleNumber::, link::Classes/String::,
 link::Classes/Pattern::).
 
 strong::Coverage::: this page describes the full vocabulary as of Phase 1 (the MVP
-audio language). It is rewritten as a whole whenever the vocabulary changes — if a
-word here disagrees with the code, the page is a bug.
+audio language) plus the breakbeat family (link::Guides/Breaks::). It is rewritten
+as a whole whenever the vocabulary changes — if a word here disagrees with the code,
+the page is a bug.
 
 SECTION:: The system in four sentences
 
@@ -35,9 +36,12 @@ a tempo clock; a sample dictionary in code::d:: (folder-name String keys →
 Arrays of link::Classes/Buffer::s); sample-player and melodic SynthDefs (pitch
 argument named code::freq::); optionally standing effect returns
 (code::~verbIn::/code::~verb::, code::~delayIn::/code::~delay::) for
-link::#route::. Dependencies: Bjorklund (euclid), BenoitLib (link::#pat::),
-sc3-plugins (the code::\dfm:: recipe, code::\crush:: effect). Words that cannot
-find the environment warn and do nothing rather than error.
+link::#route::. For the breakbeat family, additionally: the code::\break:: and
+code::\brk1:: SynthDefs, and a scanned break library
+(code::Break.scan(<samples dir>)::, which a setup file normally does at boot).
+Dependencies: Bjorklund (euclid rhythms and break masks), BenoitLib
+(link::#pat::), sc3-plugins (the code::\dfm:: recipe, code::\crush:: effect).
+Words that cannot find the environment warn and do nothing rather than error.
 
 SECTION:: Control words
 
@@ -67,10 +71,13 @@ hush(15);
 || Live sampler: capture code::beats:: of the first sound input into a new mono
 Buffer appended to code::d[key]:: (default code::"live"::). Registered
 immediately, so the pattern that plays it can be written while it records. Play
-captures with a mono instrument (conventionally code::\bplaym::).
+captures with a mono instrument (conventionally code::\bplaym::). A capture is also
+the most reliable breakbeat you can have — it was recorded at the session tempo, so
+its beat count is known exactly rather than inferred (link::#Breakbeats::).
 code::
 rec(8);
 ~g = \live.hits("x...", inst: \bplaym); ~g.play;
+Break.capture(\me, ~someBuffer, 8);       // the same capture, choppable
 ::
 ## code::pad(\x)::, code::pad(\y)::
 || Trackpad/mouse position as a control-rate proxy in 0..1 (server-side
@@ -136,6 +143,19 @@ as a single sculptable proxy. Amp divides across partials.
 code::
 ~a = \dfm.stack(~r, [1, 2, 4, 6]);  ~a.fade(8).play;
 ::
+## code::\break.chop(spec, step, steps, amp, vari, flip, hold)::
+|| Chop pattern over a registered breakbeat: one code::\brk1:: synth per slice, so
+per-hit rate/pan/amp are ordinary pattern work. Slice notation: digits then letters
+index slices, code::.:: / code::~:: rest. See link::#Breakbeats::.
+code::
+~c = \amen.chop("0.32 0123");
+::
+## code::~a.brk(name)::
+|| The other way to spawn a break: as a persistent voice on a proxy rather than as
+events. Full family in link::#Breakbeats::.
+code::
+~d.brk(\amen); ~d.play;
+::
 ::
 
 SECTION:: Step notation anywhere
@@ -177,6 +197,115 @@ code::
 || Insert a link::Classes/LeakDC:: — hygiene for feedback and chaos.
 ## code::~a.fade(seconds)::
 || Set crossfade time, returning the proxy: code::~a.fade(12).play::.
+::
+
+SECTION:: Breakbeats
+
+A break voice is one drum loop as a persistent, sculptable voice: locked to the
+session tempo whatever tempo it was recorded at, sliceable continuously from the
+intact loop down to granular dust, reorderable in place, and swappable for another
+recording without a gap. Tutorial: link::Guides/Breaks::; registry API:
+link::Classes/Break::. Slicing and granulating are the same mechanism here — a slice
+emphasis::is:: a big grain quantised to the grid — which is why the whole range is
+one continuous gesture with no mode switch in it.
+
+All the proxy words return the proxy, so they chain. Continuous gestures take effect
+immediately; structural ones (code::seq::, code::ord::, code::rev::, code::mask::,
+code::steps::, and a swap) land on the next bar.
+
+subsection:: Entering and swapping
+
+definitionList::
+## code::~a.brk(name)::
+|| Put a break in this proxy. First call installs the engine and this voice's
+slice-sequence buffer; later calls swap the sample on the next bar with emphasis::no
+gap::, keeping every other control where you left it (the grain generator reads its
+buffer once per grain, so sounding grains finish on the old break while new ones
+read the new one). No argument cycles the library.
+code::
+~d.brk(\amen); ~d.play;
+~d.brk(\think);        // gapless swap
+~d.brk;                // cycle
+::
+## code::\break.bpm::, code::\break.len::, code::\break.buf::, code::\break.stretch::
+|| A break's own tempo, its length in beats, its mono Buffer, and the rate that would
+fit it to the session. (Note code::\amen.bpm:: emphasis::reads:: a break's tempo
+while code::175.bpm:: emphasis::sets:: the session tempo.)
+## code::\break.bpm_(n)::, code::\break.len_(n)::
+|| Correct a wrong tempo guess emphasis::permanently:: — written to a
+code::_breaks.scd:: sidecar beside the audio and merged over inference at every
+boot. code::len_:: is the one that matters most: beats is the number the engine
+uses, so a wrong beat count is what makes a loop run at half or double speed.
+code::
+Break.list;            // which tempos were tagged, which were guessed
+\amen.len_(8);
+::
+::
+
+subsection:: Sculpting a break voice
+
+definitionList::
+## code::~a.grind(x)::
+|| strong::The macro.:: Grain density, with three exact stations: code::0:: one grain
+per loop (intact), code::0.5:: one grain per slice (clean chops on the grid),
+code::1:: 64 grains per beat (dust).
+## code::~a.over(x)::
+|| How far each grain overruns its slot: below 1 gaps (MPC gate feel), 1 abuts, above
+1 overlaps toward a pad. Gain-compensated, so level holds across the range.
+## code::~a.win(name)::
+|| Grain envelope: code::\punch:: (default — fast attack, keeps drum transients),
+code::\gate:: (hardest), code::\hann:: (smooth, classic granular, mushy on drums),
+code::\swell:: (reversed).
+## code::~a.vari(x)::
+|| How the loop is fitted: code::1:: (default) repitches it — the sampler/jungle
+sound, coherent at any code::grind::; code::0:: keeps original pitch and lets grains
+stretch it, which wants code::grind:: above ~0.4.
+## code::~a.speed(x)::, code::~a.pos(x)::
+|| Musical transpose on top of code::vari:: (negative plays backwards), and a static
+offset into the loop. (code::speed::, not code::rate::, because NodeProxy already has
+a code::rate:: method.)
+## code::~a.jit(x)::, code::~a.flip(x)::, code::~a.roll(n)::
+|| Grain position scatter (the dust ingredient); probability a grain plays backwards
+over the same audio region; stutter that replays the first 1/n of each slice n times
+(code::roll(1):: releases).
+code::
+~d.grind(0.5).over(1).win(\punch);      // clean chops
+~d.grind(0.95).jit(0.6);                // dust
+~d.over(3).route(\verb, 0.5);           // and now it is a pad
+::
+::
+
+subsection:: Reordering the slices
+
+The slice order lives in a control buffer the language rewrites in place, so
+resequencing never rebuilds anything.
+
+definitionList::
+## code::~a.seq(spec)::
+|| Slice order. In a string, digits then letters index slices (base 36), code::.::
+and code::~:: rest, spaces and code::|:: are visual only; an Array works too, with
+nil/negative/link::Classes/Rest:: as rests. A sequence longer than one loop keeps
+counting across loops instead of restarting — polymeter for free.
+## code::~a.ord::, code::~a.rev::
+|| Source order, or backwards by slice (not by sample). Both also reset code::scr::.
+## code::~a.scr(x)::
+|| Probability per slice of ignoring the sequence and choosing at random — a
+continuous fade from composed to stochastic, not a switch.
+## code::~a.mask(hits, n)::
+|| Euclidean gate: keep code::hits:: of code::n:: slices, rest the others.
+## code::~a.steps(n)::
+|| Slices per loop (16 = sixteenths of a 4-beat loop). An untouched order is
+regenerated at the new length; a hand-set sequence is left alone.
+## code::~a.resync::
+|| Realign loop, slice grid and sequence to the bar. Alignment is exact at voice
+start and after any resync; a mid-set tempo change can leave the loop boundary off
+the bar until you ask.
+code::
+~d.seq("0.325476");
+~d.scr(0.35);
+~d.mask(5, 16);
+~d.ord;
+::
 ::
 
 SECTION:: Wiring sounds together
@@ -253,8 +382,16 @@ ctl: \name_ctl, func: { |in, val| ... }):: makes code::~a.fx(\name, ...):: work
 immediately. Register a Spec for the control name.
 ::
 
-The notation parsers (code::Synesthesia.parseHits::, code::parseDegs::) are pure
-functions with unit tests — run code::TestSynesthesiaParsers.run::.
+list::
+## strong::Grain windows:: — code::Break.windows:: holds the per-grain envelope
+buffers code::~a.win(name):: selects from; add your own shape there and it is
+switchable live, because the engine reads the envelope buffer once per grain.
+::
+
+The notation parsers are pure functions with unit tests — run
+code::TestSynesthesiaParsers.run:: (code::Synesthesia.parseHits::,
+code::parseDegs::) and code::TestBreak.run:: (code::Break.inferTempo::,
+code::bpmTags::, code::parseSeq::, code::beatsFor::).
 
 SECTION:: Maintenance rule for this page
 

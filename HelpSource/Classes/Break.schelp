@@ -1,0 +1,287 @@
+TITLE:: Break
+summary:: The breakbeat registry — what the \break engine knows about your drum loops
+categories:: Live Coding>Synesthesia
+related:: Guides/Breaks, Guides/Synesthesia, Reference/Synesthesia-Reference, Classes/NodeProxy, Classes/GrainBuf
+
+DESCRIPTION::
+
+Break is the language-side half of the breakbeat machine. It scans folders of
+drum-loop recordings, works out each one's tempo and length in beats, loads them as
+mono buffers, and holds the per-voice state the code::\break:: SynthDef needs —
+the slice-sequence buffers and the grain-envelope windows.
+
+The split exists because of the def contract in this system (see the repo's
+code::Setup/SynthDefs/CONVENTIONS.md::, rule 5): a SynthDef may not reference
+interpreter state. So nothing on the server can know a sample's tempo, index your
+library, or hold a rewritable sequence. All of that lives here, and the engine is
+pure DSP driven by controls.
+
+The tutorial is link::Guides/Breaks::. You rarely call these methods directly —
+the vocabulary on link::Classes/NodeProxy:: (code::brk::, code::grind::,
+code::seq::…) and link::Classes/Symbol:: (code::chop::, code::bpm_::) is the
+performance surface. What follows is the API underneath it.
+
+note::
+Buffers live on the server, so a server reboot invalidates the library. Re-run
+code::Break.scan:: (or your Setup file) after rebooting.
+::
+
+CLASSMETHODS::
+
+METHOD:: scan
+Scan a samples directory and build the library. Every subfolder whose name begins
+with code::folderPrefix:: (default code::"breaks"::) is read, so
+code::breaks/::, code::breaks175/:: and code::breaks-jungle/:: all qualify. If the
+directory you pass has no such subfolders but does contain audio itself, it is
+treated as a breaks folder directly.
+
+Each file is loaded as a mono buffer (see code::monoMode::), given a key derived
+from its filename, and tagged with an inferred tempo and beat length that a
+code::_breaks.scd:: sidecar in the same folder may override.
+
+Calling code::scan:: again frees the previous buffers and starts over.
+
+argument:: dir
+the samples directory (or a breaks folder). Tilde paths are expanded.
+argument:: server
+defaults to code::Server.default::.
+returns:: this
+discussion::
+code::
+Break.scan("~/Studio/.../Setup/samples");   // Setup.scd does this for you
+::
+
+METHOD:: list
+Post the library as a table: key, bpm, beats, duration, which inference rule fired,
+and the filename. The code::from:: column is the important one — it tells you
+whether a tempo was read from a tag or guessed from duration.
+returns:: the array of keys
+
+METHOD:: at
+The entry for a key, as an link::Classes/Event:: with keys code::buf:: (the mono
+link::Classes/Buffer::), code::bpm::, code::beats::, code::dur::, code::path::,
+code::file::, code::folder::, code::chans:: and code::src:: (which rule set the
+tempo).
+argument:: key
+a link::Classes/Symbol::.
+returns:: an Event, or nil
+
+METHOD:: set
+Override a break's tempo or beat length and persist it to the folder's
+code::_breaks.scd:: sidecar. Any live voice playing that break picks the new length
+up at once. Usually reached as code::\amen.bpm_(172):: / code::\amen.len_(8)::.
+
+Passing only code::bpm:: recomputes beats from the duration; passing only
+code::beats:: recomputes bpm.
+argument:: key
+argument:: bpm
+argument:: beats
+returns:: the updated entry
+
+METHOD:: capture
+Register an already-recorded buffer as a break. A capture made at the session
+tempo needs no inference — you know its beat count exactly — which makes this the
+most reliable entry in the library.
+argument:: key
+argument:: buf
+a mono link::Classes/Buffer::.
+argument:: beats
+its length in beats.
+returns:: the key actually used (deduplicated if the name was taken)
+discussion::
+code::
+r = rec(8);                    // Synesthesia's live sampler
+Break.capture(\me, r, 8);
+~e.brk(\me);
+::
+
+METHOD:: inferTempo
+The tempo guess, as a pure function — exposed because it is the part most likely to
+be wrong about your particular files, and the part worth testing. Returns an
+link::Classes/Event:: with code::bpm::, code::beats:: and code::src::.
+
+Priority: a bpm-tagged number in the filename (code::src: \filename::), then a
+tagged or plausible number in the folder name (code::\folder::), then the duration
+heuristic (code::\duration::, or code::\hint:: when a bare filename number broke a
+tie, or code::\fallback:: when nothing was plausible).
+argument:: fileName
+argument:: folderName
+argument:: dur
+duration in seconds.
+returns:: an Event
+
+METHOD:: bpmTags
+Every digit run in a string, each flagged with whether it sits next to "bpm". This
+is what stops a filename like code::250093__amfe__175bpm-loop.wav:: from being read
+as 250093 bpm.
+returns:: an array of Events with code::num:: and code::tagged::
+
+METHOD:: beatsFor
+How many beats a loop of code::dur:: seconds holds at code::bpm::, rounded. Warns
+when the result is far from a whole number, which means either the tag is wrong or
+the file is not cut to whole beats.
+argument:: bpm
+argument:: dur
+
+METHOD:: bpmFromDur
+The duration heuristic on its own: assume a whole number of beats, prefer the
+reading whose tempo is most plausible. code::hint:: only breaks ties.
+argument:: dur
+argument:: hint
+
+METHOD:: parseSeq
+Parse a slice sequence. In a link::Classes/String::, digits then letters index
+slices (base 36), code::.:: and code::~:: are rests, spaces and code::|:: are
+ignored. An link::Classes/Array:: passes through, with nil, negative and
+link::Classes/Rest:: entries becoming rests. Rests are code::-1::.
+returns:: an array of integers
+discussion::
+code::
+Break.parseSeq("0.325");        // [ 0, -1, 3, 2, 5 ]
+Break.parseSeq("9ab");          // [ 9, 10, 11 ]
+Break.parseSeq([0, nil, 3]);    // [ 0, -1, 3 ]
+::
+
+METHOD:: stretchOf
+The playback rate that makes a break fit the current session tempo. Used by
+code::vari:: on the engine and by code::chop::.
+argument:: key
+
+METHOD:: tempo
+The performance clock's tempo in beats per second.
+
+METHOD:: tempo_
+Push a tempo to every live break voice. code::bpm():: calls this, and a watcher
+calls it for tempo changes made any other way.
+argument:: bps
+
+METHOD:: window
+The bufnum of a named grain envelope: code::\punch:: (fast attack, short tail —
+keeps drum transients), code::\gate:: (near-rectangular), code::\hann:: (smooth,
+classic granular), code::\swell:: (reversed). Reached as code::~d.win(\gate)::.
+argument:: name
+
+METHOD:: register
+Install the code::\break:: engine on a proxy, allocate its slice-sequence buffer
+and wire up its infrastructure controls. code::brk:: calls this; you should not
+need to.
+argument:: proxy
+argument:: key
+returns:: the voice Event (code::key::, code::seq::, code::steps::, code::slen::, code::ordered::)
+
+METHOD:: unregister
+Forget a proxy and free its sequence buffer.
+argument:: proxy
+
+METHOD:: writeSeq
+Write a slice sequence into a voice's buffer, set its active length, and realign to
+the bar. code::ordered:: marks the sequence as plain source order so that a later
+change of code::steps:: can safely regenerate it.
+argument:: proxy
+argument:: values
+argument:: ordered
+
+METHOD:: trig
+Fire a trigger-rate control on a proxy exactly once.
+
+warning::
+This sets the control and then immediately unsets it, and that second step is
+load-bearing. link::Classes/NodeProxy::'s code::set:: stores values in the proxy's
+nodeMap, which is replayed on every rebuild — so a trigger control left set to 1
+fires again every time the proxy is re-evaluated or faded in.
+::
+argument:: proxy
+argument:: key
+
+METHOD:: schedBar
+Run a function on the next quant boundary of the performance clock, so structural
+changes land musically. Falls back to running immediately if there is no clock or
+quant is 0.
+argument:: func
+
+METHOD:: freeAll
+Free every buffer (library, sequences, windows), forget every voice and stop the
+tempo watcher.
+
+METHOD:: clear
+Free the library's buffers and empty it, leaving voices and windows alone.
+
+METHOD:: resolveKey
+Resolve a break reference: nil gives the one after code::current:: (which is how
+code::~d.brk:: cycles), an link::Classes/Integer:: indexes code::order::, anything
+else is treated as a name.
+argument:: name
+argument:: current
+
+SUBSECTION:: Settings
+
+METHOD:: monoMode
+How a multichannel file becomes the mono buffer code::GrainBuf:: requires.
+code::\mix:: (default) is a true mixdown, done in the language with array slicing;
+code::\left:: and code::\right:: take one channel via
+link::Classes/Buffer#*readChannel::.
+
+METHOD:: folderPrefix
+Which subfolders code::scan:: treats as breaks. Default code::"breaks"::.
+
+METHOD:: seqSize
+Frames in a slice-sequence buffer, i.e. the longest sequence and the most slices.
+Default 64.
+
+METHOD:: bpmWindow
+The plausible source-tempo range the duration heuristic works within. Default
+code::[60, 200]::.
+
+METHOD:: audioExtensions
+Readable file extensions. Default code::["wav", "aiff", "aif", "flac"]:: — mp3 is
+not readable by link::Classes/Buffer::.
+
+SUBSECTION:: State
+
+METHOD:: all
+The library: key -> entry.
+
+METHOD:: order
+Keys in scan order. code::~d.brk:: with no argument cycles through this.
+
+METHOD:: voices
+Live break voices: proxy -> voice Event.
+
+METHOD:: windows
+Grain-envelope buffers by name.
+
+METHOD:: size
+How many breaks are loaded.
+
+METHOD:: keyAt
+The key at an index, wrapping.
+
+METHOD:: server
+The server the library loads onto.
+
+EXAMPLES::
+
+code::
+// the whole thing, from nothing
+s.waitForBoot({
+    var b = Buffer.read(s, Platform.resourceDir +/+ "sounds/a11wlk01.wav",
+        action: { |buf|
+            Break.capture(\demo, buf, 2);   // 2 beats at 120 bpm
+            Break.list;
+        });
+});
+
+// play it
+p = ProxySpace.push(s); p.makeTempoClock; p.clock.tempo = 2; p.quant = 4;
+~d.brk(\demo); ~d.play;
+
+// sculpt it
+~d.grind(0.75);      // toward grains
+~d.seq("0.1.");      // a sparser order
+~d.scr(0.4);         // let chance in
+~d.ord;              // back to source order
+
+// inspect what the registry decided
+Break.at(\demo);
+Break.list;
+::

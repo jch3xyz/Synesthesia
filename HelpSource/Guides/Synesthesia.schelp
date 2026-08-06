@@ -1,7 +1,7 @@
 TITLE:: Synesthesia — a live coding vocabulary
 summary:: Getting started with Synesthesia: the patch is the canvas, patterns are brushes
 categories:: Live Coding>Synesthesia
-related:: Reference/Synesthesia-Reference, Classes/Synesthesia, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
+related:: Reference/Synesthesia-Reference, Guides/Breaks, Classes/Synesthesia, Classes/Break, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
 
 note::
 This guide is the narrative introduction. The strong::complete vocabulary on a
@@ -251,6 +251,23 @@ or install sc3-plugins.
 || Effects insert on the proxy you call them on. If you routed a proxy into
 another (code::.feeds::), sculpt the emphasis::destination:: to affect the sum.
 ::
+
+SECTION:: The breakbeat machine
+
+One instrument in the library is big enough to have its own tutorial: a break voice
+is a whole drum-loop recording as a single sculptable voice — locked to your tempo
+whatever tempo it was recorded at, and dissolvable continuously from the intact loop
+down to granular dust on one control.
+
+code::
+~d.brk(\amen); ~d.play;      // in on the bar, tempo-locked
+~d.grind(0.5);               // clean sixteenth chops
+~d.seq("0.325476");          // reorder the slices
+~d.brk(\think);              // swap the sample, gapless
+::
+
+Read link::Guides/Breaks:: for the whole family, and link::Classes/Break:: for the
+registry that knows what tempo each of your loops was recorded at.
 
 SECTION:: Where this is going
 
