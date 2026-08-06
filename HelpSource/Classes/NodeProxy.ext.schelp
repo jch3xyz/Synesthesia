@@ -268,8 +268,15 @@ returns:: this proxy
 METHOD:: win
 The grain envelope. code::\punch:: (default) has a fast attack and short tail, so
 chops keep their transient; code::\gate:: is near-rectangular and hardest;
-code::\hann:: is the classic smooth granular window, which fades in the front of
-every grain and so mushes drums; code::\swell:: is reversed.
+code::\hann:: is the classic smooth granular window; code::\swell:: is reversed.
+
+warning::
+code::\hann:: wants code::over:: of 2 or more. Its edges are half the grain each way,
+so at code::over(1):: consecutive grains do not overlap enough to sum back to a flat
+level and the output is gated at the slice rate — measured 95 dB of dip per seam at
+code::over(1)::, and flat to within 3 dB at code::over(2)::. The punchier windows are
+the ones that behave at code::over(1)::.
+::
 argument:: name
 returns:: this proxy
 

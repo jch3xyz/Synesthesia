@@ -85,15 +85,29 @@ Break {
 		^this
 	}
 
-	// A server quit invalidates every Buffer we hold. Drop the references WITHOUT
-	// freeing them: after the next boot those bufnums get reissued to whatever loads
-	// first, and freeing a stale object would then free somebody else's buffer.
+	// A server quit invalidates every Buffer we hold, so the whole library goes with
+	// it — a rescan is needed anyway once the server is back, and Setup does that at
+	// boot. Two things matter here:
+	//
+	// Nothing is FREED. After the next boot those bufnums get reissued to whatever
+	// loads first, so freeing a stale object would free somebody else's buffer.
+	//
+	// And the registry is emptied rather than left holding entries with nil buffers.
+	// Half-alive entries made the vocabulary throw raw doesNotUnderstand errors
+	// ("Message 'bufnum' not understood") on the next `brk`; empty means the words hit
+	// their own "no breaks loaded — Break.scan(...)" path, which says what to do.
 	*prWatchServer {
 		serverWatcher ?? {
 			serverWatcher = { |server|
-				all.do { |entry| entry[\buf] = nil };
+				var had = order.size;
+				all.clear;
+				order = [];
 				windows.clear;
-				voices.do { |voice| voice[\seq] = nil };
+				voices.clear;
+				if(had > 0) {
+					("Break: server stopped — " ++ had
+						++ " break(s) dropped. Re-run Setup (or Break.scan) after booting.").postln;
+				};
 			};
 			ServerQuit.add(serverWatcher);
 		};
@@ -391,7 +405,14 @@ Break {
 		if(folderPath.isNil) { ^nil };
 		path = folderPath +/+ sidecarName;
 		all.do { |entry|
-			if((entry[\folder] == folderPath) and: { entry[\src] == \sidecar }) {
+			// Written back: anything the user has corrected, AND anything whose key
+			// differs from the one the filename would produce — i.e. a rename. A
+			// rename-only sidecar entry keeps the inferred `src`, so filtering on
+			// src == \sidecar alone silently destroyed hand-written renames the next
+			// time anything in the folder was corrected.
+			var renamed = entry[\key] != this.prKeyFor(entry[\file]);
+			if((entry[\folder] == folderPath)
+				and: { (entry[\src] == \sidecar) or: { renamed } }) {
 				// a quote in a filename would otherwise produce a sidecar that fails
 				// to compile, silently losing every override in the folder
 				lines.add("\t\"" ++ entry[\file].asString.replace("\"", "\\\"")
