@@ -45,6 +45,13 @@
 				\beats, entry[\beats],
 				\steps, voice[\steps]
 			);
+			// A longer loop means more slices, and the sequence has to grow with them
+			// or only the first part of the new break is ever reached. Only a sequence
+			// still in source order is safe to regenerate — a hand-written one is the
+			// performer's, and gets left alone.
+			if(voice[\ordered] == true and: { voice[\slen] != voice[\steps] }) {
+				Break.writeSeq(this, Array.series(voice[\steps], 0, 1), true);
+			};
 			// a new loop length repositions the loop boundary, so realign to the bar
 			Break.trig(this, \resync);
 		};
@@ -181,9 +188,14 @@
 	// the break's length in beats
 	len { ^Break.at(this) !? { |e| e[\beats] } }
 
-	// correct a wrong guess, permanently: writes the folder's _breaks.scd sidecar
-	bpm_ { |value| ^Break.set(this, value) }
-	len_ { |value| ^Break.set(this, nil, value) }
+	// Correct a wrong guess, permanently: writes the folder's _breaks.scd sidecar.
+	// These return the Symbol, not Break.set's entry — the entry is an Event, and an
+	// Event turns any unknown foo_(x) into a key write via doesNotUnderstand, so
+	// `\amen.bpm_(172).len_(8)` would have silently written a junk `len` key to the
+	// registry instead of setting the beat count. Returning the receiver also matches
+	// every other word in the vocabulary.
+	bpm_ { |value| Break.set(this, value); ^this }
+	len_ { |value| Break.set(this, nil, value); ^this }
 
 	// the playback rate that makes this break fit the session tempo
 	stretch { ^Break.stretchOf(this) }
@@ -219,6 +231,9 @@
 		^Pbind(
 			\instrument, \brk1,
 			\buf, entry[\buf],
+			// the event's \sustain is in beats, so the def needs the tempo to turn it
+			// into a window length; read per event, so it tracks a live tempo change
+			\tempo, Pfunc { Break.tempo },
 			// \slice and \rev are scratch keys the later keys read
 			\slice, Pseq(vals, inf),
 			\rev, Pfunc { flip.coin.binaryValue },

@@ -246,9 +246,13 @@ subsection:: Sculpting a break voice
 
 definitionList::
 ## code::~a.grind(x)::
-|| strong::The macro.:: Grain density, with three exact stations: code::0:: one grain
-per loop (intact), code::0.5:: one grain per slice (clean chops on the grid),
-code::1:: 64 grains per beat (dust).
+|| strong::The macro — how big the pieces are.:: Three exact stations: code::0:: one
+grain per loop, code::0.5:: one grain per slice, code::1:: 64 grains per beat.
+Note that on its own it is nearly inaudible, by design: pieces in their original
+order at their original times reassemble the original loop at any resolution. It
+sets the emphasis::resolution:: the other gestures work at — the same
+code::scr(0.5):: is a beat shuffle at code::grind(0.3):: and a texture at
+code::grind(0.9)::.
 ## code::~a.over(x)::
 || How far each grain overruns its slot: below 1 gaps (MPC gate feel), 1 abuts, above
 1 overlaps toward a pad. Gain-compensated, so level holds across the range.

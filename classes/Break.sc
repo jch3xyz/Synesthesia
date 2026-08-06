@@ -129,6 +129,14 @@ Break {
 		^entry
 	}
 
+	// ...and the one place it leaves. Removing from `all` alone would leave a key in
+	// `order` pointing at nothing, which then breaks Break.list and `brk` cycling.
+	*remove { |key|
+		var entry = all.removeAt(key.asSymbol);
+		order = order.reject { |k| k == key.asSymbol };
+		^entry
+	}
+
 	// filename -> a short lowercase symbol; the sidecar's `key:` overrides this
 	*prKeyFor { |fileName|
 		var stem = fileName.splitext[0].toLower;
@@ -261,7 +269,7 @@ Break {
 	// pick the reading whose tempo is most break-plausible. `hint` (a bare number
 	// from the filename) only breaks ties.
 	*bpmFromDur { |dur, hint|
-		var cands = List.new, best;
+		var cands = List.new, pow2, pool, best;
 		#[1, 2, 3, 4, 6, 8, 12, 16, 24, 32].do { |beats|
 			var bpm = beats * 60 / dur;
 			if(this.prPlausible(bpm)) { cands.add((bpm: bpm, beats: beats)) };
@@ -269,13 +277,20 @@ Break {
 		if(cands.isEmpty) {
 			^(bpm: 120, beats: (dur * 2).round.max(1).asInteger, src: \fallback)
 		};
+		// a bare number in the filename settles it outright, if it matches a candidate
 		if(hint.notNil) {
 			best = cands.detect { |c| ((c[\bpm] / hint) - 1).abs < 0.02 };
 			best !? {
 				^(bpm: best[\bpm].round(0.01), beats: best[\beats], src: \hint)
 			};
 		};
-		best = cands.minItem { |c| (c[\bpm] / 150).log.abs };
+		// Prefer a power-of-two beat count. Loops are cut in halves far more often
+		// than in thirds, so a 2-second file is much more likely 4 beats at 120 than
+		// 6 at 180 — which is what a nearest-to-150 score alone would have chosen.
+		// The 3/6/12/24 candidates stay available for genuinely triple-metre loops.
+		pow2 = cands.select { |c| c[\beats].isPowerOfTwo };
+		pool = if(pow2.isEmpty) { cands } { pow2 };
+		best = pool.minItem { |c| (c[\bpm] / 150).log.abs };
 		^(bpm: best[\bpm].round(0.01), beats: best[\beats], src: \duration)
 	}
 
@@ -307,8 +322,19 @@ Break {
 			entry[\beats] = beats ?? { this.beatsFor(bpm, entry[\dur]) };
 		};
 		beats !? {
+			var implied = (beats * 60 / entry[\dur]).round(0.01);
 			entry[\beats] = beats.asInteger;
-			if(bpm.isNil) { entry[\bpm] = (beats * 60 / entry[\dur]).round(0.01) };
+			if(bpm.isNil) {
+				// bpm and beats are two views of one fact, tied together by the file's
+				// duration, so setting one re-derives the other. Say so when that
+				// silently replaces a tempo the user set a moment ago.
+				if((entry[\bpm] - implied).abs > (implied * 0.02)) {
+					("Break: " ++ entry[\key] ++ " at " ++ beats ++ " beats implies "
+						++ implied ++ " bpm, replacing " ++ entry[\bpm]
+						++ " (the two are linked by the file's length)").warn;
+				};
+				entry[\bpm] = implied;
+			};
 		};
 		entry[\src] = \sidecar;
 		this.prWriteSidecar(entry[\folder]);
@@ -335,13 +361,19 @@ Break {
 		^dict
 	}
 
-	// rewrite the folder's sidecar from the entries currently overridden
+	// rewrite the folder's sidecar from the entries currently overridden.
+	// A captured break has no folder, so there is nowhere to persist it — that is
+	// not an error, just nothing to do.
 	*prWriteSidecar { |folderPath|
-		var path = folderPath +/+ sidecarName;
-		var lines = List.new, file;
+		var path, lines = List.new, file;
+		if(folderPath.isNil) { ^nil };
+		path = folderPath +/+ sidecarName;
 		all.do { |entry|
 			if((entry[\folder] == folderPath) and: { entry[\src] == \sidecar }) {
-				lines.add("\t\"" ++ entry[\file] ++ "\" -> (key: '" ++ entry[\key]
+				// a quote in a filename would otherwise produce a sidecar that fails
+				// to compile, silently losing every override in the folder
+				lines.add("\t\"" ++ entry[\file].asString.replace("\"", "\\\"")
+					++ "\" -> (key: '" ++ entry[\key]
 					++ "', bpm: " ++ entry[\bpm] ++ ", beats: " ++ entry[\beats] ++ ")");
 			};
 		};
@@ -394,9 +426,12 @@ Break {
 
 	*server { ^Server.default }
 
-	// beats per second on the performance clock
+	// beats per second on the performance clock. Read directly rather than through
+	// Synesthesia.space, which warns when there is no ProxySpace — this is polled
+	// several times a second by the tempo watcher, and would flood the post window.
 	*tempo {
-		var space = Synesthesia.space;
+		var space = thisProcess.interpreter.p;
+		if(space.isKindOf(ProxySpace).not) { space = nil };
 		^(space.tryPerform(\clock).tryPerform(\tempo)) ? 1
 	}
 
@@ -555,13 +590,21 @@ Break {
 		^vals
 	}
 
-	// Fire a trigger-rate control once. The unset matters: NodeProxy:set stores the
-	// value in the proxy's nodeMap, which is replayed on every rebuild — so a \tr
-	// control left set to 1 fires a phantom trigger every time the proxy is
-	// re-evaluated or faded in.
+	// Fire a trigger-rate control once, sent straight to the running synths via the
+	// proxy's group.
+	//
+	// Deliberately NOT proxy.set: NodeProxy:set stores the value in the nodeMap,
+	// which is replayed on every rebuild, so a \tr control left at 1 fires a phantom
+	// trigger every time the proxy is re-evaluated or faded in. Following it with
+	// unset removes that, but unset also sends the control's default (0) in a second
+	// bundle — and if the two bundles land in the same control block the trigger can
+	// be cancelled before it is ever seen. Setting on the group sidesteps both: the
+	// running synths get the trigger, and the nodeMap is never written at all.
+	//
+	// A proxy that is not playing needs no trigger: its phase starts at 0 anyway.
 	*trig { |proxy, key = \resync|
-		proxy.set(key, 1);
-		proxy.unset(key);
+		var group = proxy.tryPerform(\group);
+		if(group.notNil and: { proxy.isPlaying }) { group.set(key, 1) };
 		^proxy
 	}
 

@@ -85,10 +85,9 @@ table::
 
 code::
 ~d.grind(0);       // the loop, whole
-~d.grind(0.5);     // clean sixteenth chops  (the default)
-~d.grind(0.75);    // each chop subdivided into grains — it starts to blur
-~d.grind(1);       // dust
-~d.grind(0.35);    // and back out again
+~d.grind(0.5);     // sixteenth-sized pieces  (the default)
+~d.grind(0.75);    // each piece subdivided further
+~d.grind(1);       // grain-sized pieces
 ::
 
 There is no mode switch anywhere in that sweep. "Slicing" and "granulating" are
@@ -98,6 +97,32 @@ quantised to the grid — which is why the gesture is continuous.
 The 0.5 station is exact, not approximate: at that value the grain grid and the
 slice grid run at the same rate from the same phase, so each grain begins exactly
 where a slice begins.
+
+warning::
+strong::Moving code::grind:: on its own will not sound like much,:: and this is worth
+understanding before you decide the knob is broken. Pieces played in their
+emphasis::original order, at their original times:: reassemble into the original
+loop — at any resolution. That transparency is a feature: it means the machine adds
+nothing until you ask it to.
+
+code::grind:: does not transform the audio. It sets the emphasis::resolution:: at
+which everything else operates. It becomes audible the moment a second gesture has
+something to chew on:
+
+code::
+~d.grind(1);       // still basically the loop...
+~d.jit(0.6);       // ...and now it is dust
+~d.jit(0); ~d.grind(0.5); ~d.seq("0.325476");   // resolution you can hear
+~d.scr(0.5);       // chance, at whatever size grind is set to
+~d.over(0.5);      // gaps, at whatever size grind is set to
+::
+
+So the useful mental model is: code::grind:: chooses emphasis::how big the pieces
+are::; code::seq::, code::scr::, code::jit:: and code::over:: choose emphasis::what
+happens to them.:: A scramble at code::grind(0.3):: is a beat-shuffled break; the
+same scramble at code::grind(0.9):: is a texture. Same word, different world,
+because the resolution changed.
+::
 
 SUBSECTION:: over — how much each grain overruns its slot
 

@@ -161,6 +161,20 @@ TestBreak : UnitTest {
 		this.assert(pat.isKindOf(Pbind), "chop returns a plain Pbind");
 		this.assertEquals(key.bpm, 175, "Symbol bpm getter");
 		this.assertEquals(key.len, 4, "Symbol len getter");
-		Break.all.removeAt(key);
+		// Break.remove, not all.removeAt: dropping the entry alone would leave the
+		// key in `order`, and this test would then poison Break.list and brk cycling
+		// in the live session it ran in.
+		Break.remove(key);
+		this.assert(Break.order.includes(key).not, "the test cleans up after itself");
+	}
+
+	test_durationHeuristic_prefersPowerOfTwoBeats {
+		// A 2-second loop is far likelier to be 4 beats at 120 than 6 at 180: loops
+		// get cut in halves, not thirds. Scoring on tempo alone chose the 6.
+		var g = Break.bpmFromDur(2.0, nil);
+		this.assert(g[\beats].isPowerOfTwo,
+			"power-of-two beat count preferred (got " ++ g[\beats]
+			++ " beats at " ++ g[\bpm] ++ " bpm)");
+		this.assertEquals(g[\beats], 4, "2s reads as 4 beats at 120 bpm");
 	}
 }

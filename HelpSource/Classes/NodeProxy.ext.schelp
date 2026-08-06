@@ -190,11 +190,18 @@ code::
 ::
 
 METHOD:: grind
-The macro. Grain density, from the whole loop to dust, with three exact stations:
-code::0:: = one grain per loop (the loop plays intact), code::0.5:: = one grain per
-slice (clean chops on the grid), code::1:: = 64 grains per beat (dust). Continuous
-throughout — a slice emphasis::is:: a big grain quantised to the grid, so there is
-no mode switch anywhere in the sweep.
+The macro: how big the pieces are. Three exact stations — code::0:: one grain per
+loop, code::0.5:: one grain per slice, code::1:: 64 grains per beat. Continuous
+throughout, because a slice emphasis::is:: a big grain quantised to the grid.
+
+note::
+On its own this is nearly inaudible, and that is by design: pieces played in their
+original order at their original times reassemble the original loop at any
+resolution. code::grind:: does not transform the audio — it sets the
+emphasis::resolution:: every other gesture then operates at. Pair it with
+link::#-seq::, link::#-scr::, link::#-jit:: or link::#-over:: and the same scramble
+is a beat shuffle at code::grind(0.3):: and a texture at code::grind(0.9)::.
+::
 argument:: x
 0..1 (default 0.5)
 returns:: this proxy
