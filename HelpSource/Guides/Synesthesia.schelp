@@ -1,7 +1,7 @@
 TITLE:: Synesthesia — a live coding vocabulary
 summary:: Getting started with Synesthesia: the patch is the canvas, patterns are brushes
 categories:: Live Coding>Synesthesia
-related:: Reference/Synesthesia-Reference, Guides/Breaks, Classes/Synesthesia, Classes/Break, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
+related:: Reference/Synesthesia-Reference, Guides/Breaks, Classes/Synesthesia, Classes/Break, Classes/Broadcast, Overviews/JITLib, Classes/ProxySpace, Classes/Pbind
 
 note::
 This guide is the narrative introduction. The strong::complete vocabulary on a
@@ -269,11 +269,77 @@ code::
 Read link::Guides/Breaks:: for the whole family, and link::Classes/Break:: for the
 registry that knows what tempo each of your loops was recorded at.
 
+SECTION:: Playing with a VJ
+
+Everything above makes sound. link::Classes/Broadcast:: makes the same session
+emphasis::legible to another machine::: a VJ running Resolume or MadMapper, connected
+by Ethernet, receives every hit and note as it sounds, every control signal as it
+moves, and a separate audio stem for every proxy you can hear — with nothing typed
+during the set. One line in your setup file, after the server has booted and the
+returns are built:
+
+code::
+Broadcast.start(NetAddr("192.168.1.20", 9000));   // the VJ machine's IP and OSC port
+::
+
+From then on Broadcast watches the ProxySpace. Play the first session above with it
+running and this is what the receiver sees, line by line:
+
+table::
+## strong::You type:: || strong::The receiver gets::
+## code::~r = { 55 };:: || code::/syn/kr/r 55.0:: thirty times a second, within a bar
+## code::~a.fade(6).play;:: || code::/syn/stems main a:: — and audio for code::~a:: on hardware channels 4–5
+## code::~k.play;:: || code::/syn/hit/k 1.0 0:: on every kick, landing on the audible onset; code::/syn/stems main a k::
+## code::~a.fx(\lpf, pad(\x).mapExp(200, 8000));:: || code::/syn/kr/syn_sig1:: in Hz and code::/syn/krn/syn_sig1:: in 0..1, as you move the trackpad
+## code::~m.play;:: || code::/syn/note/ping 0.3 3 0.5:: per note; the bracket chord is three messages at one instant
+## code::hush(15);:: || the stems fade over 15 s, the hits stop, the stem table does not change
+::
+
+Plus code::/syn/tempo:: and code::/syn/beat:: at the same rate as the control
+values, and a code::/syn/alive:: heartbeat every second. The whole namespace, and
+how each stream works, is on the link::Classes/Broadcast:: page; the setup-time
+options (which streams, the rate, where the stems land, the root) are its
+link::Classes/Broadcast#*start#start:: arguments.
+
+subsection:: The audio side: an aggregate device
+
+OSC goes over the network on its own. The stems are audio, and Broadcast's job ends
+at the hardware output channels: stem 0 (always the main mix) on channels 2–3 by
+default, stem 1 on 4–5, and so on, up to eight proxy stems. To get those channels
+to the VJ:
+
+numberedlist::
+## Install BlackHole 16ch (a free virtual audio driver) on this machine.
+## In Audio MIDI Setup, make an emphasis::aggregate device:: of your performance
+interface plus BlackHole 16ch, with the interface first — so channels 0–1 are still
+the house PA.
+## Boot the server on that aggregate device (code::s.options.outDevice::) with
+enough output channels: code::s.options.numOutputBusChannels = 18:: for the main mix
+plus eight stems from channel 2.
+## Run SonoBus (or JackTrip) with BlackHole as its input, connected to the VJ's
+machine; the VJ gets eighteen channels, labelled by the code::/syn/stems:: table.
+::
+
+If the server has fewer output channels than the stems need, Broadcast warns once
+and sends as many stems as fit, main mix first; if it has fewer than two from
+code::stemOut::, it sends none. The music is never affected. SonoBus's channel
+ceiling per connection is undocumented: test the full stem count on the receiving
+machine before a show, and fall back to JackTrip if it cannot carry them.
+
+subsection:: Testing without a VJ
+
+The companion repo's code::Setup/BroadcastReceiver.scd:: is a receiver stub: run it
+in a second sclang and it logs every message with a timestamp, so you can watch what
+the VJ would see. code::Setup/BroadcastCheck.scd:: runs this guide's first session
+against it on a live server and asserts that every sound-making line reached the
+wire — the feature's acceptance test.
+
 SECTION:: Where this is going
 
 Synesthesia is being built in phases. This page documents the current audio
-language. Planned next: a perceptual "painting" register (colors as timbre
-coordinates, tools as applicators), an auto-generated control panel driven by the
-named-controls substrate, and visuals that render the same gesture stream. The
+language and the Broadcast layer over it. A perceptual "painting" register was
+planned and then dropped: the flexible vocabulary underneath it proved to be the
+better language. Planned next: an auto-generated control panel driven by the
+named-controls substrate, and perception (hands, face) as a control surface. The
 design principle throughout: nothing auxiliary ever needs typed commands during a
-performance.
+performance — Broadcast is the first feature built on that rule.

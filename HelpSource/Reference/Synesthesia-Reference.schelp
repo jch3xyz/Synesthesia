@@ -1,7 +1,7 @@
 TITLE:: Synesthesia Reference
 summary:: The complete Synesthesia vocabulary on one page
 categories:: Live Coding>Synesthesia
-related:: Guides/Synesthesia, Classes/Synesthesia
+related:: Guides/Synesthesia, Classes/Synesthesia, Classes/Broadcast, Classes/Break
 
 DESCRIPTION::
 This page documents strong::every word Synesthesia currently provides::, organized
@@ -10,14 +10,14 @@ narrative introduction with a runnable minimal environment, read
 link::Guides/Synesthesia:: first; for any single word in its native habitat, each
 is also documented on its home class (link::Classes/NodeProxy::,
 link::Classes/Symbol::, link::Classes/SimpleNumber::, link::Classes/String::,
-link::Classes/Pattern::).
+link::Classes/Pattern::, link::Classes/Broadcast::).
 
 strong::Coverage::: this page describes the full vocabulary as of Phase 1 (the MVP
-audio language) plus the breakbeat family (link::Guides/Breaks::). It is rewritten
-as a whole whenever the vocabulary changes — if a word here disagrees with the code,
-the page is a bug.
+audio language), the breakbeat family (link::Guides/Breaks::) and the Broadcast
+layer (link::#Broadcast::). It is rewritten as a whole whenever the vocabulary
+changes — if a word here disagrees with the code, the page is a bug.
 
-SECTION:: The system in four sentences
+SECTION:: The system in five sentences
 
 Synesthesia layers a terse vocabulary over link::Overviews/JITLib::. A persistent
 signal graph (drones, effects, wiring) is the emphasis::canvas::; event patterns
@@ -26,7 +26,9 @@ SuperCollider object — link::Classes/Function::, link::Classes/Pbind:: or
 link::Classes/NodeProxy:: — so shorthand and raw SC compose freely in one
 expression. Every numeric parameter a word receives is lifted into a named control
 with a registered link::Classes/Spec::, so nothing is a magic constant: everything
-stays reachable by code::.set::, GUIs and presets.
+stays reachable by code::.set::, GUIs and presets. Anything auxiliary — today, the
+Broadcast stream to a VJ's machine — is configured once in setup and then reads the
+canvas on its own; no word a performer types mid-set exists for it.
 
 SECTION:: Environment contract
 
@@ -41,6 +43,10 @@ code::\brk1:: SynthDefs, and a break library — scanned and loaded
 (code::Break.scan(<samples dir>)::) and/or indexed and loaded on first use
 (code::Break.addLibrary(<library dir>, exclude: [...])::), which a setup file
 normally does at boot.
+For Broadcast: the receiver's address, and — for stems — the server booted on an
+aggregate device with enough output channels (the main mix plus eight stems from
+channel 2 need 18); fewer channels means fewer stems and one warning, never a
+change to the music.
 Dependencies: Bjorklund (euclid rhythms and break masks), BenoitLib
 (link::#pat::), sc3-plugins (the code::\dfm:: recipe, code::\crush:: effect).
 Words that cannot find the environment warn and do nothing rather than error.
@@ -65,7 +71,9 @@ grid(4);    // edits always land on the bar
 ## code::hush(seconds)::
 || Fade emphasis::every:: proxy to silence — the musical panic button. Definitions
 survive; anything returns with code::.play::. Note this includes standing returns:
-revive with code::~verb.play; ~delay.play:: if you continue.
+revive with code::~verb.play; ~delay.play:: if you continue. Broadcast's own hidden
+proxies (keys starting code::syn_bc_::) are skipped, and its stems and event stream
+follow the fade on their own.
 code::
 hush(15);
 ::
@@ -93,7 +101,10 @@ code::
 SECTION:: Spawning sound
 
 Symbols name material: a sample folder in code::d::, a SynthDef, or a drone
-recipe. All pattern-spawners return a real link::Classes/Pbind::.
+recipe. All pattern-spawners return a real link::Classes/Pbind::, carrying three
+inert keys (code::\syn_brush::, code::\syn_material::, code::\syn_index::) that
+let link::#Broadcast:: name the material in every event — the server never sees
+them.
 
 definitionList::
 ## code::\folder.hits(stepString, step, amp, inst, buf, rot, accent)::
@@ -359,7 +370,9 @@ pattern → signal.
 signal → pattern.
 ## code::~c.mapExp(lo, hi)::, code::~c.mapLin(lo, hi)::
 || New control proxies mapping a 0..1 signal into a range — exponential for
-frequencies/times, linear for amounts/pans.
+frequencies/times, linear for amounts/pans. Like code::pad:: and code::follow::,
+each registers a link::Classes/Spec:: under its new proxy's key, which is what
+Broadcast's normalised stream (code::/syn/krn/<key>::) reads.
 code::
 ~env = ~k.follow;                               // drums modulate anything
 ~m = \sinfb.deg("0 3 5", 0.25, amp: pad(\y).pat.linlin(0, 1, 0.05, 0.4));
@@ -386,6 +399,86 @@ code::
 ::
 ::
 
+SECTION:: Broadcast
+
+A second machine — a VJ on Resolume or MadMapper, over Ethernet — receives
+everything musically meaningful on the canvas, with strong::nothing typed during
+the set::. One line in setup starts it; from then on it watches the
+link::Classes/ProxySpace::. Three streams: emphasis::events:: (one OSC message per
+sounding hit or note, timed to the audible onset), emphasis::continuous:: (every
+control-rate proxy's value at a fixed rate, plus tempo and beat phase) and
+emphasis::stems:: (a stereo audio pair per audible proxy on hardware outputs, the
+main mix always on stem 0, for SonoBus/JackTrip via an aggregate device). It never
+breaks the music: every failure degrades to "the VJ gets less", with one warning.
+Full detail: link::Classes/Broadcast::; the receiving-side setup:
+link::Guides/Synesthesia#Playing with a VJ::.
+
+subsection:: The setup-time surface
+
+definitionList::
+## code::Broadcast.start(addr, events, kr, stems, rate, stemOut, maxStems, root, krn, timetags)::
+|| Start streaming to code::addr:: (a link::Classes/NetAddr::, code::"host:port"::
+or code::[host, port]::). Per-stream flags default to true; code::rate:: is the
+continuous stream's Hz (30); code::stemOut:: the first hardware channel for stems
+(2); code::maxStems:: the proxy stems beyond the main mix (8, capped with one
+warning if the server has fewer channels); code::root:: the namespace root
+(code::"/syn"::); code::krn:: also sends Spec-normalised control values;
+code::timetags:: sends events as timestamped bundles for a receiver that honours
+them, instead of scheduling the send onto the onset.
+code::
+Broadcast.start(NetAddr("192.168.1.20", 9000));          // in Setup, after boot
+Broadcast.start("192.168.1.20:9000", stems: false, rate: 20);
+::
+## code::Broadcast.stop::
+|| Stop every stream; the canvas is untouched.
+## code::Broadcast.status::
+|| Post the address, the live streams, the tapped control proxies, the stem table
+with its channels, the server's output channel count and any warnings.
+::
+
+subsection:: What is streamed, and how
+
+definitionList::
+## Events
+|| Every event from code::hits::, code::deg::, code::chord:: and code::chop::,
+read from the event's play path (after any code::\callback:: of yours, which keeps
+running). The server message leaves code::~latency:: before the sound, so the OSC
+send is scheduled by that much and lands on the onset (±10 ms budget; measured
+at about a millisecond). Rests send nothing; a brush in a stopped proxy sends nothing.
+## Continuous
+|| Every control-rate proxy in the space — roots, code::follow:: envelopes,
+code::pad:: proxies, code::mapExp::/code::mapLin:: derivatives, anything you make
+by hand — found automatically within a bar of its creation, each on its own stable
+address at code::rate:: Hz in native range, plus a 0..1 twin where a Spec is
+registered under the key (register one for a hand-made proxy with
+code::Spec.add(\r, [20, 200, \exp])::). The tap is one hidden kr proxy whose source
+is swapped, quant-aligned, when the set changes. A proxy whose source goes nil is
+dropped and announced once.
+## Stems
+|| Every audio proxy that is heard (has a playing Monitor) gets a stereo pair from
+the first time it is heard, keeps its index through code::.stop::/code::.play:: and
+source swaps, and releases it on code::.clear::. A stem is the proxy post-fx,
+scaled by a gain that follows the proxy's Monitor (so it fades with code::.stop::
+and code::hush::). Stem 0 is the main mix, always.
+::
+
+subsection:: The OSC namespace
+
+Flat and stable; keys and names exactly as typed (characters an address cannot
+hold become code::_::); the root is a setting.
+
+code::
+/syn/hit/<folder>        amp index         .hits and .chop
+/syn/note/<synthdef>     amp pitch dur     .deg (degree) and .chord (midinote), one per note
+/syn/kr/<proxyKey>       value             native range, at `rate` Hz
+/syn/krn/<proxyKey>      value01           Spec-normalised, where a Spec is registered
+/syn/tempo               bpm
+/syn/beat                phase01           beat-in-bar
+/syn/stems               key0 key1 ...     stem index -> proxy key, on change ("-" = free)
+/syn/gone/<proxyKey>                       proxy cleared or source nil, once
+/syn/alive               seconds           heartbeat, 1 Hz
+::
+
 SECTION:: Extending the system
 
 The intended growth path is adding recipes — see link::Classes/Synesthesia:: for
@@ -406,10 +499,13 @@ buffers code::~a.win(name):: selects from; add your own shape there and it is
 switchable live, because the engine reads the envelope buffer once per grain.
 ::
 
-The notation parsers are pure functions with unit tests — run
+The notation parsers and Broadcast's pure parts have unit tests — run
 code::TestSynesthesiaParsers.run:: (code::Synesthesia.parseHits::,
-code::parseDegs::) and code::TestBreak.run:: (code::Break.inferTempo::,
-code::bpmTags::, code::parseSeq::, code::beatsFor::).
+code::parseDegs::), code::TestBreak.run:: (code::Break.inferTempo::,
+code::bpmTags::, code::parseSeq::, code::beatsFor::) and code::TestBroadcast.run::
+(addresses, payload per brush, stem index stability, kr-set diffing). The live
+acceptance test for Broadcast is the companion repo's
+code::Setup/BroadcastCheck.scd::.
 
 SECTION:: Maintenance rule for this page
 

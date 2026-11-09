@@ -1,0 +1,57 @@
+TITLE:: BroadcastStemTable
+summary:: The stem assignment table behind Broadcast: index ↔ proxy, stable for the session
+categories:: Live Coding>Synesthesia
+related:: Classes/Broadcast, Guides/Synesthesia
+
+DESCRIPTION::
+Pure bookkeeping used by link::Classes/Broadcast::. Index 0 is always the main mix
+(code::\main::). An index is given out once per proxy for the life of the table and
+handed back only by link::#-release::, which Broadcast calls when the proxy's source
+goes nil — so a proxy keeps its stem through code::.stop::/code::.play:: cycles and
+source swaps, and the receiver can learn "stem 3 is the kick" once. A released index
+is reused by the next new proxy. Unit-tested in code::TestBroadcast::.
+
+CLASSMETHODS::
+
+METHOD:: new
+argument:: size
+how many proxy stems beyond the main mix
+
+INSTANCEMETHODS::
+
+METHOD:: assign
+The proxy's index, assigning the lowest free one if it has none; code::nil:: when
+the table is full.
+argument:: proxy
+argument:: key
+the ProxySpace key, as published
+
+METHOD:: release
+Hand the proxy's index back; returns it, or nil.
+
+METHOD:: indexOf
+METHOD:: keyOf
+The index / key held by a proxy, or nil.
+
+METHOD:: keys
+The table as published on code::/syn/stems::: an Array of keys by index, nil for a
+free slot, code::\main:: at 0.
+
+METHOD:: proxies
+Every proxy currently holding an index.
+
+METHOD:: count
+How many proxies hold an index.
+
+METHOD:: size
+The number of proxy stems (not counting the main mix).
+
+EXAMPLES::
+code::
+t = BroadcastStemTable(3);
+t.assign(~k, \k);   // -> 1
+t.assign(~a, \a);   // -> 2
+t.assign(~k, \k);   // -> 1 (stable)
+t.release(~k);      // -> 1
+t.keys;             // -> [ main, nil, a, nil ]
+::

@@ -1,0 +1,331 @@
+TITLE:: Broadcast
+summary:: Everything musical on the canvas, streamed to a VJ's machine — configured once, never typed mid-set
+categories:: Live Coding>Synesthesia
+related:: Guides/Synesthesia, Reference/Synesthesia-Reference, Classes/NetAddr, Classes/OSCFunc, Classes/NodeProxy, Classes/Monitor
+
+DESCRIPTION::
+
+Broadcast lets a second computer — a VJ running Resolume, MadMapper or anything
+that speaks OSC and takes audio, connected by Ethernet — receive everything
+musically meaningful that happens on the Synesthesia canvas, with strong::zero
+words typed during the performance::. It is started once in your setup file and
+then watches the link::Classes/ProxySpace:: on its own: new proxies, new control
+signals and new brushes are found and streamed as you make them.
+
+Three streams leave the machine:
+
+table::
+## strong::Stream:: || strong::Carries:: || strong::Transport::
+## Events || one OSC message per sounding hit or note from every brush
+(code::hits::, code::deg::, code::chord::, code::chop::), timed to the audible onset
+|| OSC over UDP
+## Continuous || every control-rate proxy's current value at a fixed rate, plus
+tempo and beat-in-bar phase || OSC over UDP
+## Stems || one stereo audio pair per audible proxy, the main mix always on stem 0
+|| hardware output channels, into an aggregate device for SonoBus or JackTrip
+::
+
+This is the first emphasis::auxiliary:: feature in Synesthesia, and design rule 3
+("nothing auxiliary gets performance-time commands") shapes everything about it:
+its whole API is three class methods and a handful of setup-time flags. It never
+asks you to assign a stem, name a stream or tag a pattern. It also strong::never
+breaks the music::: a wrong IP, an absent receiver, SonoBus not running, a missing
+aggregate device or too few output channels all degrade to "the VJ gets less", with
+at most one warning per condition in the post window and audio identical to a
+session with Broadcast off.
+
+For the setup on the receiving side (the aggregate device, what the receiver sees),
+read link::Guides/Synesthesia#Playing with a VJ::.
+
+SECTION:: The OSC namespace
+
+Flat and stable: one float where the receiver will learn-map, and no address ever
+depends on canvas state (no indices that shift when a proxy is removed). Keys are
+the ProxySpace keys as typed (code::k::, code::a::), names are the Symbols as typed
+(code::k::, code::bplay::, code::ping::); characters that cannot appear in an OSC
+address become code::_::. The root is a setting, so two machines can coexist.
+
+table::
+## strong::Address:: || strong::Arguments:: || strong::When::
+## code::/syn/hit/<folder>:: || amp, index || every code::hits:: hit and every code::chop:: slice: amplitude (after accents), then the sample variant or slice number
+## code::/syn/note/<synthdef>:: || amp, pitch, dur || every code::deg:: note (pitch is the scale degree) and every code::chord:: note (pitch is the MIDI note); a chord is one message per note, all at the same instant; dur in beats
+## code::/syn/kr/<proxyKey>:: || value || each control-rate proxy, at the continuous rate, in its native range
+## code::/syn/krn/<proxyKey>:: || value01 || the same, normalised 0..1 through the link::Classes/Spec:: registered under the proxy's key (where there is one)
+## code::/syn/tempo:: || bpm || at the continuous rate
+## code::/syn/beat:: || phase01 || beat-in-bar phase, at the continuous rate
+## code::/syn/stems:: || key0, key1, … || the stem table, on every change; code::main:: is always first, code::-:: marks a free slot
+## code::/syn/gone/<proxyKey>:: || — || once, when a proxy is cleared or its source set to nil
+## code::/syn/alive:: || seconds || heartbeat, once a second
+::
+
+JITLib's own tempo proxy (code::~tempo::, made by code::p.makeTempoClock::) is a
+control-rate proxy like any other, so it appears as code::/syn/kr/tempo:: in beats
+per second; code::/syn/tempo:: is the same clock in BPM.
+
+Which proxies have a Spec for the normalised stream? Everything the vocabulary
+derives registers one under its own key: code::pad(\x):: (0..1), code::.follow::
+(0..1, amplitude), code::.mapExp:: / code::.mapLin:: (the range you gave). A proxy
+you make by hand (code::~r = { 55 }::) streams only in native range unless you
+register a Spec for its key in your setup file: code::Spec.add(\r, [20, 200, \exp])::.
+
+SECTION:: How it works
+
+subsection:: Events
+
+The brushes already know their material when they are built: code::\k.hits:: knows
+the folder, code::\ping.deg:: the SynthDef, code::\amen.chop:: the break. Each tags
+the link::Classes/Pbind:: it returns with three inert keys — code::\syn_brush::,
+code::\syn_material::, code::\syn_index:: — which travel in the Event like any
+other key and never reach the server. The Pbind stays a plain Pbind (design rule 1).
+
+When Broadcast starts it wraps the one function every Event passes through on its
+way to the server: the default parent event's code::play::, which runs the event
+type and then calls the event's code::\callback::. Broadcast's hook runs after that
+call, so a performer's own code::\callback:: (code::Pbindf(pat, \callback, …)::) is
+never shadowed, wrapped, or replaced — it simply still runs. The hook reads the
+tags, builds the message and schedules it.
+
+strong::Timing.:: The server bundle for an event goes out code::~latency::
+(0.2 s by default) before the sound, so the hook schedules the OSC send on
+link::Classes/SystemClock:: by exactly that much (plus any code::\lag:: or
+code::\timingOffset::). It lands on the audible onset for receivers that ignore OSC
+bundle timetags, which is what Resolume and MadMapper are assumed to do. Measured
+against the receiver stub on this machine, a hit arrives about a millisecond after
+its onset (worst case just over two); the manifest's budget is ±10 ms. If the receiver does honour timetags, code::timetags: true:: sends a
+timestamped bundle immediately instead and lets the receiver do the waiting.
+
+Rests send nothing. And like a stem, the event stream follows audibility: JITLib
+puts the hosting proxy in every event (code::~proxy::), and a brush playing into a
+stopped proxy — after code::.stop:: or code::hush:: — keeps running unheard, so it
+sends nothing until the proxy is played again. "Heard" is judged by whether the
+proxy's Monitor has a group, which is true from the moment code::.play:: is called
+and false from the moment code::.stop:: is, so the first hit of a new brush is
+never lost waiting for the server's reply.
+
+subsection:: Continuous
+
+One hidden control-rate proxy, code::syn_bc_kr::, runs a link::Classes/SendReply::
+over every control-rate proxy in the space at code::rate:: Hz, and an
+link::Classes/OSCFunc:: fans each value out to its own address. Half a beat after
+every beat a walker compares the set of control-rate proxies with the one it last
+saw; when they differ it swaps the tap's source — quant-aligned by the proxy
+itself, with no crossfade (so no tick is ever reported twice) and nothing to glitch,
+since the tap carries no audio. A proxy made at any moment is therefore on the wire
+within one bar. The reply ID of each tick is a generation number, so a value is
+never mislabelled around a swap. Proxies whose source goes nil are dropped and
+announced once on code::/syn/gone/<key>::.
+
+subsection:: Stems
+
+Every audio proxy already owns a private bus and every brush is played
+emphasis::into:: a proxy, so the proxy is the natural stem — assigned
+automatically, by identity, never by hand (two brushes in one proxy share a stem,
+which is right). A proxy gets a stem the first time it is heard (has a playing
+link::Classes/Monitor::), keeps that index through code::.stop::/code::.play::
+cycles and source swaps, and releases it only when its source goes nil
+(code::.clear::, or code::~a = nil::). The receiver can learn "stem 3 is the kick"
+once. Stems land on hardware output channels from code::stemOut:: upward, in
+stereo pairs; stem 0, the first pair, is always the main mix.
+
+strong::Why a gain-tracking tap, not a mirrored Monitor.:: code::proxy.stop:: stops
+only the Monitor; the proxy keeps running. A naive tap on code::proxy.ar(2):: would
+keep sending the VJ a kick the audience can no longer hear, including after
+code::hush::. The exact fix would mirror the Monitor (one Monitor sending to both
+the main pair and the stem pair), but that means intercepting code::.play::,
+code::.stop::, code::.playN:: and code::.vol_:: on every proxy — rewriting the one
+JITLib surface a performer touches most. Instead each stem is a hidden proxy
+reading code::proxy.ar(2):: emphasis::after:: its effect chain and multiplying by a
+gain that follows code::monitor.isPlaying:: and code::monitor.vol::, lagged by the
+proxy's code::fadeTime:: (code::hush:: passes its own fade time through). It is
+approximate — a link::Classes/Lag:: is exponential where the Monitor's fade is
+linear — but non-invasive, one lightweight synth per stem, and a stem always falls
+silent when its proxy does. Stem 0 is the real main mix: a synth at the head of the
+root node reading hardware bus 0 with link::Classes/InFeedback::, which at that
+position holds the previous cycle's complete, limited output.
+
+Two things to know about the hardware side. The stems are post-fx and pre-master,
+so the server's master volume (code::s.volume::) does not touch them — except that
+a Volume synth scales emphasis::every:: output bus of the server, stems included, so
+leave code::s.volume:: alone in a show and ride the house level on the interface.
+And the stem taps only ever read the proxy's bus: a proxy's own Monitor settings
+(code::vol::, a code::playN:: mapping) are followed as a gain, not reproduced.
+
+subsection:: Staying invisible
+
+Everything Broadcast makes in the ProxySpace starts with code::syn_bc_:: (the
+code::prefix::): the kr tap and one hidden proxy per stem. code::hush:: skips that
+prefix, the stem walker never taps one and the kr walker never reports one. They do
+appear in a link::Classes/ProxyMixer::, where they are harmless.
+
+CLASSMETHODS::
+
+METHOD:: start
+Start broadcasting to a receiver. Call it once, from your setup file, after the
+server has booted and the ProxySpace is in place (inside the
+code::s.waitForBoot:: block, after the standing returns). Calling it while running
+stops the previous instance first.
+
+argument:: addr
+The receiver: a link::Classes/NetAddr::, a String code::"192.168.1.20:9000"::
+(the port defaults to 9000), or code::[host, port]::. A hostname that does not
+resolve warns once and starts nothing; an IP that is unreachable starts normally —
+UDP has nothing to fail — and the receiver simply gets nothing.
+argument:: events
+Stream the events (default true).
+argument:: kr
+Stream the control-rate proxies, tempo and beat (default true).
+argument:: stems
+Send the stems to hardware outputs (default true).
+argument:: rate
+The continuous stream's rate in Hz (default 30, clipped to 1..200).
+argument:: stemOut
+The first hardware output channel for stems (default 2, leaving 0–1 for the house
+PA). Stem 0 (the main mix) is at code::stemOut::, stem 1 at code::stemOut + 2::, …
+argument:: maxStems
+How many proxy stems beyond the main mix (default 8, so 18 channels in all from
+code::stemOut::). If the server has fewer output channels, Broadcast warns once
+and caps this.
+argument:: root
+The namespace root (default code::"/syn"::).
+argument:: krn
+Also send the Spec-normalised twin of every control value on
+code::/syn/krn/<key>:: where a Spec is registered (default true).
+argument:: timetags
+Send events as OSC bundles with timetags, immediately, instead of scheduling the
+send onto the onset (default false — assume the receiver ignores timetags until
+you have tested it).
+returns:: this
+discussion::
+code::
+// in Setup, after the returns are built
+Broadcast.start(NetAddr("192.168.1.20", 9000));
+
+// after a rehearsal: events and control values, no stems, 20 Hz
+Broadcast.start("192.168.1.20:9000", stems: false, rate: 20);
+
+// two Synesthesia machines, one receiver
+Broadcast.start("192.168.1.20", root: "/syn2");
+::
+
+METHOD:: stop
+Stop every stream, restore the Event play function, clear the hidden proxies.
+
+METHOD:: status
+Post the receiver address, which streams are live, the control-rate proxies
+currently tapped, the stem table with its output channels, the server's output
+channel count, and any warnings issued since start.
+
+METHOD:: running
+METHOD:: events
+METHOD:: kr
+METHOD:: stems
+Whether Broadcast, and each stream, is live.
+
+METHOD:: addr
+METHOD:: root
+METHOD:: rate
+METHOD:: stemOut
+METHOD:: maxStems
+METHOD:: krn
+METHOD:: timetags
+The settings of the current start.
+
+METHOD:: krKeys
+The control-rate proxy keys currently tapped, sorted.
+
+METHOD:: stemTable
+The current link::Classes/BroadcastStemTable:: (code::keys:: is the published
+table; index 0 is code::\main::).
+
+METHOD:: warnings
+An IdentityDictionary of the warnings issued since start, one per condition —
+useful in a check, since the post window may be far away.
+
+METHOD:: prefix
+The reserved key prefix for Broadcast's own proxies (default code::"syn_bc_"::).
+
+subsection:: Pure helpers
+
+These take no state from a running Broadcast and are unit-tested
+(code::TestBroadcast.run::).
+
+METHOD:: address
+Build an address: code::Broadcast.address("/syn", "kr", \k):: → code::"/syn/kr/k"::.
+Each part passes through link::#*sanitize::.
+
+METHOD:: sanitize
+An OSC-safe address part: letters, digits, code::_ - .:: survive; anything else
+(spaces, pattern characters) becomes code::_::.
+
+METHOD:: isHidden
+Whether a ProxySpace key belongs to Broadcast (starts with code::prefix::).
+code::hush:: asks this.
+
+METHOD:: eventMessages
+The messages one Event produces, as code::[[address, arg, arg, …], …]::, or
+code::nil:: for a rest or an Event that did not come from a brush. Reads the
+brush tags, code::\amp::, code::\dur::, and the pitch (code::\degree:: for
+code::deg::, the Event's own code::~midinote:: for code::chord::).
+argument:: ev
+argument:: root
+defaults to the running root, else code::"/syn"::
+discussion::
+code::
+Broadcast.eventMessages(Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4, syn_index: 2, dur: 0.5)));
+// -> [ [ /syn/hit/k, 1.4, 2 ] ]
+Broadcast.eventMessages(Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2, note: [0, 3, 7], octave: 5, dur: 4)));
+// -> [ [ /syn/note/pad, 0.2, 60.0, 4 ], [ /syn/note/pad, 0.2, 63.0, 4 ], [ /syn/note/pad, 0.2, 67.0, 4 ] ]
+::
+
+METHOD:: krKeysOf
+The keys an environment's walk would tap: control-rate proxies with a source,
+not hidden, sorted.
+
+METHOD:: krDiff
+code::(added: …, gone: …):: between two key arrays.
+
+METHOD:: stemDecision
+What the stem walker does with one proxy, given code::hasIndex, hasSource,
+isAudio, monitoring::: code::\assign::, code::\keep::, code::\release:: or
+code::\ignore::. This is where the stability rules live.
+
+METHOD:: resolveAddr
+A link::Classes/NetAddr:: from the forms link::#*start:: accepts, or nil.
+
+SECTION:: Verifying it
+
+definitionlist::
+## code::TestBroadcast.run::
+|| The pure parts: addresses, payload shapes per brush, that the brushes carry
+their tags, stem index stability, kr-set discovery and diffing. No server.
+## code::Setup/BroadcastReceiver.scd:: (in the Live-Coding-With-SuperCollider repo)
+|| A stand-in for the VJ's machine: run it in a second sclang and it logs every
+message under the root with a timestamp — on this machine or the receiving one.
+## code::Setup/BroadcastCheck.scd::
+|| The manifest's acceptance test against a live server and the stub: boots
+Setup, starts the stub, evaluates the guide's "A first session" line by line
+with nothing typed for Broadcast, asserts every sound-making line reached the
+wire, measures the event timing, exercises stop/play/swap/clear, and runs the
+negative test (unreachable receiver: same audio, at most one warning).
+::
+
+EXAMPLES::
+
+A whole session, with Broadcast watching. Nothing after the first line is for it:
+
+code::
+Broadcast.start(NetAddr("127.0.0.1", 57130));   // the stub, if you are running it
+
+bpm(120); grid(4);
+~r = { 55 };                               // -> /syn/kr/r 55.0 within a bar
+~a = \tone.stack(~r, [1, 2, 4]);
+~a.fade(6).play;                           // -> /syn/stems main a ; audio on channels 4-5
+~k = \k.hits("x..x..x.");
+~k.play;                                   // -> /syn/hit/k 1.0 0 … ; stems main a k
+~a.fx(\lpf, pad(\x).mapExp(200, 8000));    // -> /syn/kr/syn_sig1 (Hz) and /syn/krn/syn_sig1 (0..1)
+~m = \ping.deg("0 3 5 [0 2 4]", 0.5);
+~m.play;                                   // -> /syn/note/ping 0.3 0 0.5 … (three at once for the chord)
+hush(15);                                  // stems fade over 15 s, events stop, table unchanged
+Broadcast.status;
+Broadcast.stop;
+::

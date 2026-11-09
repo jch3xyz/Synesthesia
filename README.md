@@ -13,23 +13,28 @@ Status (November 2026):
   the `brk` / `grind` / `seq` / `chop` words over the `\break` engine.
 - **The painting register (colors/tools) was dropped** in August 2026: the flexible
   language underneath it proved to be the better language.
-- **Next: Broadcast** — events, control values and per-proxy stems streamed to a VJ
-  machine, configured once in Setup. Specified, not started: see
-  [Broadcast Manifest.md](Broadcast%20Manifest.md).
+- **Phase 4 — Broadcast is real** (November 2026): events, control values and
+  per-proxy audio stems streamed to a VJ's machine, configured once in Setup and
+  then watching the ProxySpace on its own (`Broadcast.start/stop/status`, nothing
+  typed mid-set). Spec: [Broadcast Manifest.md](Broadcast%20Manifest.md), with an
+  "as built" note at the bottom.
 
 **Documentation:** open `Guides/Synesthesia` in the SuperCollider help browser for a
 complete novice-friendly guide with runnable examples (it includes a minimal
 environment using SC's bundled sounds, so nothing else is required), and
-`Guides/Breaks` for the breakbeat machine. `Reference/Synesthesia-Reference` covers
-the whole vocabulary on one page. Every word is also documented on its home class
-(NodeProxy, Symbol, String, SimpleNumber, Pattern, Break). Design rationale and the
+`Guides/Breaks` for the breakbeat machine; the guide's "Playing with a VJ" section
+and `Classes/Broadcast` cover the Broadcast layer. `Reference/Synesthesia-Reference`
+covers the whole vocabulary on one page. Every word is also documented on its home
+class (NodeProxy, Symbol, String, SimpleNumber, Pattern, Break, Broadcast). Design rationale and the
 build roadmap live in the companion repo
 ([Live-Coding-With-SuperCollider](https://github.com/jch3xyz/Live-Coding-With-SuperCollider)):
 `Roadmap.md`, `Design Notes.md`, `Breaks Build Plan.md`, `Companion Quarks.md`,
 `Vocabulary Sketch.scd`.
 
-**Checks:** `TestSynesthesiaParsers.run` and `TestBreak.run` in the IDE (no server
-needed), and `check-help.scd` after any help-file edit (runs headless too).
+**Checks:** `TestSynesthesiaParsers.run`, `TestBreak.run` and `TestBroadcast.run` in
+the IDE (no server needed), and `check-help.scd` after any help-file edit (runs
+headless too). The live-server checks (`SetupCheck`, `BreakIntegration`,
+`BroadcastCheck` with its receiver stub) live in the companion repo's `Setup/`.
 
 ## Install
 

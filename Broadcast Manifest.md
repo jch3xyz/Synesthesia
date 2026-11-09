@@ -238,3 +238,80 @@ All setup-time, none performance-time.
 - Does his receiving software honor OSC bundle timetags? Determines the latency
   compensation mechanism.
 - Confirm SonoBus's channel ceiling at our stem count on his machine.
+
+---
+
+## As built (2026-11-09)
+
+Everything above is implemented on the `broadcast` branches of this repo and the
+Live-Coding-With-SuperCollider repo. Where the build departs from the text above,
+or settled something the text left open, it is recorded here.
+
+**Mechanisms chosen.**
+
+- Events hook into the Event play path by wrapping the default parent event's `play`
+  function (the one that calls `~callback`), not by writing a `\callback` into the
+  brush Pbinds. A performer's own `\callback` therefore runs untouched, and the
+  brush Pbinds carry only three inert tags (`\syn_brush`, `\syn_material`,
+  `\syn_index`). Rule 1 and the "wrapped, never replaced" requirement both hold.
+- Latency compensation is a `SystemClock.sched` by the event's `~latency` (plus
+  `\lag` and `\timingOffset`), as the manifest allows; `timetags: true` sends a
+  timestamped bundle at once instead, for a receiver that honours them (open
+  question 3, ready either way).
+- Stems are gain-tracking taps (the manifest's second mechanism). Why, at length:
+  the class comment in `classes/Broadcast.sc`. The main mix is an `InFeedback`
+  synth at the head of the root node, which at that position reads the previous
+  cycle's finished, limited bus 0 (verified against a `ReplaceOut` limiter).
+- "Audible" is judged by the Monitor having a group — true from the `.play` call,
+  false from the `.stop` call — rather than `monitor.isPlaying`, which waits for
+  the server's reply and lost the first hits of a new brush in testing.
+
+**Beyond the manifest.**
+
+- The event stream follows audibility too: a brush in a stopped proxy (after
+  `.stop` or `hush`) sends nothing. The manifest required this of stems only; a VJ
+  receiving kicks the room cannot hear was the same fault line.
+- `hush` passes its fade time to Broadcast, so a stem follows `hush(15)` over 15 s
+  rather than the proxy's own `fadeTime`.
+- `pad`, `follow`, `mapExp` and `mapLin` now register a Spec under their new proxy's
+  key, so the normalised stream has a range for everything the vocabulary derives.
+- Two setup-time options the manifest did not name: `krn` (send the normalised
+  twin) and `timetags`.
+- JITLib's own `~tempo` proxy is a control-rate proxy, so it appears as
+  `/syn/kr/tempo` (beats per second) beside `/syn/tempo` (BPM).
+
+**Payload details settled.** A `.deg` bracket chord and a `.chord` symbol are one
+message per sounding note, all at the same instant (OSC arguments are flat, and
+Resolume/MadMapper learn one float per address). `/syn/note/...` carries `dur`
+(beats) not `sustain`. Address parts are sanitised (anything an OSC address cannot
+hold becomes `_`).
+
+**Performance budget, as measured.** The per-event path allocates the message
+arrays and one scheduling thunk; the address strings are cached per material, so
+nothing else is built per event. The continuous stream at 30 Hz with four control
+proxies and the normalised twin ran alongside the whole acceptance check without
+the server reporting a late bundle. (The manifest's "under 1% of sclang CPU with 20
+proxies" was not instrumented.)
+
+**Event timing, measured.** Against the receiver stub in a second sclang on
+localhost, over 19 hits, with the audible onset taken as the event's logical time
+plus its latency: arrival minus onset was **0.5–1.1 ms mean, 2.2 ms worst** across
+runs — inside the ±10 ms budget with room to spare. UDP transit to another machine
+on a switch adds well under a millisecond; a Wi-Fi hop would not.
+
+**Verification, as shipped.** `TestBroadcast` (quark; the manifest said to add to
+`SynesthesiaTests.sc`, but the repo gives each feature its own test class);
+`Setup/BroadcastReceiver.scd` (the stub); `Setup/BroadcastCheck.scd`, which reads
+the guide's "A first session" block out of the help file itself and evaluates it
+line by line, so the acceptance test tracks the guide. The negative test's "no
+errors" half is read off the headless log between its markers (sclang cannot
+count its own error posts).
+
+**Found along the way.** `Setup.scd` made the tempo clock before the server had
+finished booting; the clock's `~tempo` proxy took control bus 0 on an allocator the
+boot then replaced, so the first control-rate proxy of every session (`~r = { 55 }`)
+shared bus 0 with the tempo synth and read back wrong (measured 11.3 mid-fade, not
+55). Moved into `waitForBoot`. Not a Broadcast issue; Broadcast's check found it.
+
+**Still John's.** The four open questions above are unchanged; `timetags` and the
+per-stream flags mean each answer is one argument in Setup, not a code change.
