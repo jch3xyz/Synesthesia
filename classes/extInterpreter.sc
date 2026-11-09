@@ -25,7 +25,13 @@
 	hush {
 		var space = Synesthesia.space;
 		space !? {
-			space.envir.do { |proxy| proxy.stop(this) };
+			// Broadcast's own proxies (the stem taps, the kr tap) are not music, so
+			// they are left running: a stem falls silent with the proxy it follows,
+			// over the same `this` seconds — hush tells Broadcast that fade time.
+			space.envir.keysValuesDo { |key, proxy|
+				if(Broadcast.isHidden(key).not) { proxy.stop(this) };
+			};
+			Broadcast.prFadeHint(this);
 			("hush: fading all proxies over " ++ this ++ "s").postln;
 		};
 		^this
@@ -66,6 +72,8 @@
 		space ?? { ^nil };
 		if(space[key].source.isNil) {
 			space[key] = if(this == \y) { { MouseY.kr(0, 1) } } { { MouseX.kr(0, 1) } };
+			// a Spec under the proxy's key is what Broadcast's normalised stream reads
+			Spec.add(key, [0, 1]);
 		};
 		^space[key]
 	}

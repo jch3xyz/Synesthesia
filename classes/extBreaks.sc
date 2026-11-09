@@ -257,7 +257,9 @@
 			\dur, Pseq(vals.collect { |v| if(v < 0) { Rest(step) } { step } }, inf),
 			\legato, 1,
 			\amp, amp,
-			\hold, hold
+			\hold, hold,
+			// inert tags Broadcast reads (see extSymbol.sc); the slice is the "variant"
+			\syn_brush, \chop, \syn_material, key, \syn_index, Pkey(\slice)
 		)
 	}
 }

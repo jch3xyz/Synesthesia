@@ -97,6 +97,8 @@
 		envKey = (key.asString ++ "_env").asSymbol;
 		if(space[envKey].source.isNil) {
 			space[envKey] = { Amplitude.kr(Mix.new(this.ar(2))).lag(\lag.kr(lagTime)) };
+			// a Spec under the proxy's key gives Broadcast's normalised stream its range
+			Spec.add(envKey, [0, 1, \amp]);
 		};
 		^space[envKey]
 	}
@@ -111,6 +113,7 @@
 		space ?? { ^this };
 		key = Synesthesia.nextDerivedKey;
 		space[key] = { this.kr(1).linexp(0, 1, lo, hi) };
+		Spec.add(key, [lo, hi, \exp]);     // Broadcast's normalised stream reads this
 		^space[key]
 	}
 
@@ -120,6 +123,7 @@
 		space ?? { ^this };
 		key = Synesthesia.nextDerivedKey;
 		space[key] = { this.kr(1).linlin(0, 1, lo, hi) };
+		Spec.add(key, [lo, hi]);
 		^space[key]
 	}
 }

@@ -5,6 +5,11 @@
 //   \bpfsaw.chord("Cm7 Fm9")  ChordSymbol2 harmony Pbind
 //   \dfm.drone(~r)       drone Function (assign to a proxy)
 //   \dfm.stack(~r, [1,2,4])  summed harmonic stack Function
+//
+// Every brush Pbind carries three inert keys for Broadcast — \syn_brush (which word),
+// \syn_material (the folder, break or SynthDef the symbol named) and \syn_index (the
+// sample variant or slice). They ride along in the Event like any other key, the
+// server never sees them, and the Pbind stays a plain Pbind (design rule 1).
 
 + Symbol {
 
@@ -18,13 +23,16 @@
 			}, inf);
 			var amps = Pseq(events.collect(_[\amp]), inf);
 			var bufs = Pseq(events.collect { |e| folder.clipAt(e[\index] ? buf) }, inf);
-			^Pbind(\instrument, inst, \buf, bufs, \dur, durs, \amp, amps)
+			var indices = Pseq(events.collect { |e| e[\index] ? buf }, inf);
+			^Pbind(\instrument, inst, \buf, bufs, \dur, durs, \amp, amps,
+				\syn_brush, \hits, \syn_material, this, \syn_index, indices)
 		} {
 			^Pbind(
 				\instrument, inst,
 				\buf, folder.clipAt(buf),
 				\dur, Pbjorklund2(a, b ? 8, inf, rot) / 4,
-				\amp, amp
+				\amp, amp,
+				\syn_brush, \hits, \syn_material, this, \syn_index, buf
 			)
 		}
 	}
@@ -44,7 +52,8 @@
 			\octave, oct,
 			\degree, stream,
 			\dur, dur,
-			\amp, amp
+			\amp, amp,
+			\syn_brush, \deg, \syn_material, this
 		)
 	}
 
@@ -60,7 +69,8 @@
 			\note, Pseq(toks, inf),
 			\octave, 5 + oct,
 			\dur, dur,
-			\amp, amp
+			\amp, amp,
+			\syn_brush, \chord, \syn_material, this
 		)
 	}
 
