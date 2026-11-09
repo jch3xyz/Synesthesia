@@ -8,7 +8,9 @@ DESCRIPTION::
 Break is the language-side half of the breakbeat machine. It scans folders of
 drum-loop recordings, works out each one's tempo and length in beats, loads them as
 mono buffers, and holds the per-voice state the code::\break:: SynthDef needs —
-the slice-sequence buffers and the grain-envelope windows.
+the slice-sequence buffers and the grain-envelope windows. A large sample library
+is indexed instead (code::addLibrary::): every loop is known at boot, and each is
+loaded the first time something plays it.
 
 The split exists because of the def contract in this system (see the repo's
 code::Setup/SynthDefs/CONVENTIONS.md::, rule 5): a SynthDef may not reference
@@ -23,7 +25,8 @@ performance surface. What follows is the API underneath it.
 
 note::
 Buffers live on the server, so a server reboot invalidates the library. Re-run
-code::Break.scan:: (or your Setup file) after rebooting.
+code::Break.scan:: and code::Break.addLibrary:: (or your Setup file) after
+rebooting.
 ::
 
 CLASSMETHODS::
@@ -51,11 +54,75 @@ code::
 Break.scan("~/Studio/.../Setup/samples");   // Setup.scd does this for you
 ::
 
+METHOD:: addLibrary
+Index a whole sample library, of any depth, emphasis::without loading it::. Every
+folder under code::dir:: that holds audio files becomes a breaks folder: its own
+name feeds tempo inference (a folder called code::93 BPM/:: tags every file in it)
+and its own code::_breaks.scd:: sidecar applies. Folders whose name is in
+code::exclude:: or in code::libraryExclude:: are skipped together with everything
+beneath them — that is how folders of one-shot hits stay out of a library of loops.
+
+Nothing reaches the server here. A loop is loaded the first time something plays
+it (code::brk::, code::chop::, code::\name.buf:: — all through code::bufOf::), so a
+library of a thousand loops costs a thousand file-header reads at boot, well under a
+second, instead of gigabytes of memory.
+
+Additive: it adds to whatever is already in the registry. Call it after
+code::scan::, which clears the registry first.
+argument:: dir
+the library's root folder. Tilde paths are expanded.
+argument:: exclude
+folder names to skip, matched whole and ignoring case (code::"Kicks":: skips a
+folder called code::KICKS::, not one called code::Kicks 2::).
+argument:: server
+defaults to code::Server.default::.
+returns:: this
+discussion::
+code::
+Break.scan("~/Studio/.../Setup/samples");
+Break.addLibrary("~/Samples/Breaks", exclude: ["Kicks", "Snares"]);
+Break.list("funk");    // find something in it
+::
+
+METHOD:: bufOf
+The mono link::Classes/Buffer:: for a key, loading it now if it was indexed by
+code::addLibrary:: and has not played yet. Every word that plays a break goes
+through here. The Buffer object comes back at once; its samples reach the server a
+moment later — a few tens of milliseconds for a typical loop.
+
+A emphasis::swap:: (code::~d.brk(\other)::) asks for the samples when you evaluate
+it and plays them on the next bar, so the load is hidden inside the wait. Only the
+very first code::brk:: on a fresh proxy plays straight away, and even that starts on
+the next bar under the usual quant; use code::preload:: when a set must open on a
+library break with nothing left to chance.
+argument:: key
+returns:: a Buffer, or nil if the key is unknown or the server is not running
+
+METHOD:: preload
+Load library breaks ahead of time — typically the ones a set opens with.
+argument::  ... keys
+returns:: the Buffers
+discussion::
+code::
+Break.preload(\gold_rush, \searchin_break);
+::
+
 METHOD:: list
 Post the library as a table: key, bpm, beats, duration, which inference rule fired,
 and the filename. The code::from:: column is the important one — it tells you
 whether a tempo was read from a tag or guessed from duration.
-returns:: the array of keys
+
+With a large library, pass a search string: only entries whose key, filename or
+folder contains it are posted.
+argument:: match
+optional. Case is ignored.
+returns:: the array of keys posted
+discussion::
+code::
+Break.list;              // everything
+Break.list("fill");      // just the fills
+Break.list("93 bpm");    // everything in a folder called 93 BPM
+::
 
 METHOD:: at
 The entry for a key, as an link::Classes/Event:: with keys code::buf:: (the mono
@@ -125,7 +192,10 @@ argument:: dur
 
 METHOD:: bpmFromDur
 The duration heuristic on its own: assume a whole number of beats, prefer the
-reading whose tempo is most plausible. code::hint:: only breaks ties.
+reading whose tempo is most plausible. code::hint:: (a bare number from the
+filename) only breaks ties — except for a whole track, longer than 32 beats at any
+plausible tempo, where there is no reading to choose between and a plausible
+code::hint:: is taken as the tempo outright.
 argument:: dur
 argument:: hint
 
@@ -236,6 +306,12 @@ code::[60, 200]::.
 METHOD:: audioExtensions
 Readable file extensions. Default code::["wav", "aiff", "aif", "flac"]:: — mp3 is
 not readable by link::Classes/Buffer::.
+
+METHOD:: libraryExclude
+Folder names code::addLibrary:: always skips, on top of its own code::exclude::
+list. Default code::["chops", "one shots", "one-shots", "oneshots"]:: — the names
+sample packs give their pre-sliced hits. A slice is a one-shot, not a loop, and the
+engine makes its own slices anyway.
 
 SUBSECTION:: State
 

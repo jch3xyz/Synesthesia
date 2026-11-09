@@ -11,8 +11,9 @@
 // know sample tempos, index the sample library, or hold a rewritable sequence.
 // That intelligence lives here; the def is pure DSP driven by controls.
 //
-//   Break.scan(dir)        scan <dir>/breaks*\/ folders (Setup calls this)
-//   Break.list             post the library with inferred tempos
+//   Break.scan(dir)        scan <dir>/breaks*\/ folders and load them (Setup calls this)
+//   Break.addLibrary(dir)  index a whole sample library, any depth, loading on first use
+//   Break.list("amen")     post the library (or the matching part) with inferred tempos
 //   Break.at(\amen)        the entry: (buf:, bpm:, beats:, dur:, path:, src:)
 //   \amen.bpm_(172)        override + persist to the folder's _breaks.scd
 //   ~d.brk(\amen)          play it (see extBreaks.sc for the vocabulary)
@@ -27,7 +28,9 @@ Break {
 	classvar <>monoMode = \mix;     // \mix (true mixdown), \left, or \right
 	classvar <>bpmWindow;           // plausible source tempos, used by the duration heuristic
 	classvar <>audioExtensions;
+	classvar <>libraryExclude;      // folder names addLibrary always skips (case-insensitive)
 	classvar tempoWatcher, serverWatcher, lastTempo, sidecarName = "_breaks.scd";
+	classvar offGridCount;          // non-nil while addLibrary runs: counts instead of warning
 
 	*initClass {
 		all = IdentityDictionary.new;
@@ -36,6 +39,9 @@ Break {
 		windows = IdentityDictionary.new;
 		bpmWindow = [60, 200];
 		audioExtensions = ["wav", "aiff", "aif", "flac"];
+		// Sample packs ship their loops pre-sliced in folders with these names. A
+		// slice is a one-shot, not a loop — the engine makes its own slices anyway.
+		libraryExclude = ["chops", "one shots", "one-shots", "oneshots"];
 	}
 
 	// ----- scanning -------------------------------------------------------
@@ -49,7 +55,10 @@ Break {
 		this.clear;
 		this.prMakeWindows(server);
 		dir ?? { ^this };
-		root = PathName(dir.standardizePath);
+		// Trailing slash on purpose: PathName:folderName is the segment between the last
+		// two slashes, so without it a folder handed in directly ("~/loops/breaks175")
+		// would answer its PARENT's name, and lose the tempo tag in its own.
+		root = PathName(dir.standardizePath.withTrailingSlash);
 		if(root.isFolder.not) {
 			("Break.scan: not a folder — " ++ dir).warn;
 			^this
@@ -73,6 +82,91 @@ Break {
 			++ tagged ++ " tagged, " ++ (loaded - tagged) ++ " inferred").postln;
 		if(loaded > 0) { ("  " ++ order.join(" ")).postln };
 		^this
+	}
+
+	// Index a sample library of any depth WITHOUT loading it. Every folder under
+	// `dir` that holds audio files becomes a breaks folder: its own name feeds tempo
+	// inference ("93 BPM/" tags every file inside it) and its own _breaks.scd sidecar
+	// applies. A folder whose name is in `exclude` or libraryExclude is skipped with
+	// everything beneath it — that is how one-shot folders stay out.
+	//
+	// Nothing reaches the server here. Each break is loaded the first time something
+	// plays it (brk, chop, .buf — all go through bufOf), so a library of a thousand
+	// loops costs a thousand header reads at boot instead of gigabytes of memory.
+	// Use preload for the breaks a set opens with.
+	//
+	// Additive: call it after scan, which clears the registry first.
+	*addLibrary { |dir, exclude, server|
+		var root, skip, walk, before = order.size, folders = 0, skipped = List.new;
+		server = server ? Server.default;
+		this.prWatchServer;
+		if(windows.isEmpty and: { server.serverRunning }) { this.prMakeWindows(server) };
+		dir ?? { ^this };
+		root = PathName(dir.standardizePath.withTrailingSlash);   // see scan
+		if(root.isFolder.not) {
+			("Break.addLibrary: not a folder — " ++ dir).warn;
+			^this
+		};
+		skip = (exclude ? []).asArray ++ libraryExclude;
+		offGridCount = 0;
+		walk = { |folder|
+			var files, sidecar;
+			if(this.prExcluded(folder.folderName, skip)) {
+				skipped.add(folder.folderName);
+			} {
+				files = this.prAudioFiles(folder);
+				if(files.notEmpty) {
+					folders = folders + 1;
+					sidecar = this.prReadSidecar(folder.fullPath);
+					files.do { |file| this.prAddFile(file, folder, sidecar, server, true) };
+				};
+				folder.folders.do(walk);
+			};
+		};
+		protect {
+			walk.(root);
+		} {
+			("Breaks: indexed " ++ (order.size - before) ++ " loop(s) in " ++ folders
+				++ " folder(s) of " ++ root.folderName ++ " — loaded on first use").postln;
+			if(skipped.notEmpty) {
+				("  skipped " ++ skipped.size ++ " folder(s) named "
+					++ skipped.asArray.asSet.asArray.sort.join(", ")).postln;
+			};
+			if(offGridCount > 0) {
+				("  " ++ offGridCount ++ " loop(s) are not cut to whole beats at their"
+					++ " tagged tempo — rounded; fix any that drift with \\key.len_(n)").postln;
+			};
+			offGridCount = nil;
+		};
+		^this
+	}
+
+	// is this folder name on the exclude list? (pure — unit tested)
+	*prExcluded { |folderName, names|
+		var name = folderName.asString.toLower;
+		^names.asArray.any { |n| n.asString.toLower == name }
+	}
+
+	// The entry's mono Buffer, loading it now if it was indexed by addLibrary.
+	// The Buffer object comes back at once (its bufnum is allocated language-side);
+	// the samples arrive a moment later. Every word that plays a break asks here.
+	*bufOf { |key|
+		var entry = this.at(key), server = this.server;
+		entry ?? { ^nil };
+		entry[\buf] !? { ^entry[\buf] };
+		if(server.serverRunning.not) {
+			("Break: cannot load \"" ++ key ++ "\" — the server is not running").warn;
+			^nil
+		};
+		entry[\buf] = this.prLoadMono(entry[\path], entry[\chans], server);
+		entry[\buf] ?? { ("Break: could not load " ++ entry[\file]).warn };
+		^entry[\buf]
+	}
+
+	// Load library breaks ahead of time — the ones a set opens with — so their very
+	// first bar is never the one the samples are still arriving in.
+	*preload { |...keys|
+		^keys.flat.collect { |key| this.bufOf(key) }
 	}
 
 	*clear {
@@ -123,7 +217,8 @@ Break {
 		^pathName.files.select { |f| exts.includes(f.extension.toLower.asSymbol) }
 	}
 
-	*prAddFile { |file, folder, sidecar, server|
+	// lazy = index only (addLibrary): the buffer is loaded later, by bufOf
+	*prAddFile { |file, folder, sidecar, server, lazy = false|
 		var path = file.fullPath;
 		var over = (sidecar !? { sidecar[file.fileName] }) ? ();
 		var sf, dur, chans, key, guess, entry;
@@ -147,8 +242,10 @@ Break {
 			beats: over[\beats] ?? { over[\bpm] !? { this.beatsFor(over[\bpm], dur) } } ?? { guess[\beats] },
 			src: if(over[\bpm].notNil or: { over[\beats].notNil }) { \sidecar } { guess[\src] }
 		);
-		entry[\buf] = this.prLoadMono(path, chans, server);
-		entry[\buf] ?? { ("Break: could not load " ++ file.fileName).warn; ^nil };
+		if(lazy.not) {
+			entry[\buf] = this.prLoadMono(path, chans, server);
+			entry[\buf] ?? { ("Break: could not load " ++ file.fileName).warn; ^nil };
+		};
 		^this.prAdd(entry)
 	}
 
@@ -288,6 +385,8 @@ Break {
 		var exact = dur * bpm / 60;
 		var beats = exact.round.max(1);
 		if((exact - beats).abs > (beats * 0.05)) {
+			// indexing a whole library: one summary line instead of hundreds
+			if(offGridCount.notNil) { offGridCount = offGridCount + 1; ^beats.asInteger };
 			("Break: " ++ dur.round(0.001) ++ "s at " ++ bpm ++ " bpm is "
 				++ exact.round(0.01) ++ " beats — not a whole number; using "
 				++ beats ++ " (override with .beats_)").warn;
@@ -305,6 +404,12 @@ Break {
 			if(this.prPlausible(bpm)) { cands.add((bpm: bpm, beats: beats)) };
 		};
 		if(cands.isEmpty) {
+			// Longer than 32 beats at any plausible tempo — a whole track, not a loop.
+			// The beat-count search has nothing to offer, but a bare number in the name
+			// ("thesqueeze samp 80") is now the best evidence there is.
+			if(hint.notNil and: { this.prPlausible(hint) }) {
+				^(bpm: hint, beats: this.beatsFor(hint, dur), src: \hint)
+			};
 			^(bpm: 120, beats: (dur * 2).round.max(1).asInteger, src: \fallback)
 		};
 		// a bare number in the filename settles it outright, if it matches a candidate
@@ -432,19 +537,35 @@ Break {
 		^path
 	}
 
-	*list {
+	// Break.list posts everything; Break.list("funk") only the keys, files or
+	// folders containing "funk" — the way to find one loop in a big library
+	*list { |match|
+		var keys = order, row;
 		if(order.isEmpty) { ^"Breaks: none loaded — Break.scan(dir)".postln };
-		"key              bpm  beats  dur     from       file".postln;
-		order.do { |key|
-			var e = all[key];
-			(key.asString.padRight(17)
-				++ e[\bpm].round(0.1).asString.padRight(5)
-				++ e[\beats].asString.padRight(7)
-				++ (e[\dur].round(0.01).asString ++ "s").padRight(8)
-				++ e[\src].asString.padRight(11)
-				++ e[\file]).postln;
+		match !? {
+			match = match.asString.toLower;
+			keys = order.select { |key|
+				var e = all[key];
+				[key.asString, e[\file].asString, (e[\folder] ? "").asString]
+					.any { |s| s.toLower.contains(match) }
+			};
+			if(keys.isEmpty) { ^("Breaks: nothing matches \"" ++ match ++ "\"").postln };
 		};
-		^order
+		// Every column ends in a space it can never fill, so a value wider than its
+		// column (a long library key, a bpm like 180.6) pushes the row along instead
+		// of running into the next value.
+		row = { |key, bpm, beats, dur, src, file|
+			(key.asString.padRight(16) ++ " " ++ bpm.asString.padRight(6) ++ " "
+				++ beats.asString.padRight(5) ++ " " ++ dur.asString.padRight(7) ++ " "
+				++ src.asString.padRight(9) ++ " " ++ file).postln;
+		};
+		row.("key", "bpm", "beats", "dur", "from", "file");
+		keys.do { |key|
+			var e = all[key];
+			row.(key, e[\bpm].round(0.1), e[\beats], e[\dur].round(0.01).asString ++ "s",
+				e[\src], e[\file]);
+		};
+		^keys
 	}
 
 	// ----- live capture ---------------------------------------------------

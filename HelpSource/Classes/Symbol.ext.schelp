@@ -209,7 +209,9 @@ code::
 ::
 
 METHOD:: buf
-The mono link::Classes/Buffer:: holding this break, for raw SuperCollider use.
+The mono link::Classes/Buffer:: holding this break, for raw SuperCollider use. A
+break indexed from a library (link::Classes/Break#*addLibrary::) is loaded by this
+call if it has not played yet.
 returns:: a link::Classes/Buffer::, or nil
 
 METHOD:: bpm

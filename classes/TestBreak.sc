@@ -147,6 +147,53 @@ TestBreak : UnitTest {
 			"and everything it returns really is an audio file");
 	}
 
+	// ----- library indexing -----------------------------------------------
+
+	test_excluded {
+		this.assert(Break.prExcluded("CHOPS", ["chops"]), "case-insensitive match");
+		this.assert(Break.prExcluded("Kicks", ["Kicks"]), "exact name");
+		this.assert(Break.prExcluded("Kicks 2", ["kicks"]).not,
+			"whole names only — a substring is not a match");
+		this.assert(Break.prExcluded("Amen", []).not, "empty list excludes nothing");
+	}
+
+	test_addLibrary_indexesWithoutLoading {
+		// SuperCollider's own sounds folder stands in for a library. No server: the
+		// whole point is that indexing never touches one.
+		var dir = Platform.resourceDir +/+ "sounds";
+		var before = Break.order.copy;
+		var added;
+		Break.addLibrary(dir);
+		added = Break.order.reject { |k| before.includes(k) };
+		this.assert(added.size > 0, "indexes the audio files (got " ++ added.size ++ ")");
+		this.assert(added.every { |k| Break.at(k)[\buf].isNil },
+			"nothing is loaded at index time");
+		this.assert(added.every { |k| Break.at(k)[\beats] >= 1 },
+			"every entry still gets a tempo and a length");
+		added.do { |k| Break.remove(k) };
+		this.assertEquals(Break.order, before, "the test cleans up after itself");
+	}
+
+	test_addLibrary_excludesFolder {
+		// excluding the root by name skips it and everything beneath it
+		var dir = Platform.resourceDir +/+ "sounds";
+		var before = Break.order.size;
+		Break.addLibrary(dir, exclude: ["SOUNDS"]);
+		this.assertEquals(Break.order.size, before, "an excluded folder adds nothing");
+	}
+
+	test_rootFolderName {
+		// Regression: without the trailing slash, a folder passed in directly named
+		// its parent — so a breaks175/ folder lost its tempo tag.
+		var dir = Platform.resourceDir +/+ "sounds";
+		this.assertEquals(PathName(dir.withTrailingSlash).folderName, "sounds",
+			"the folder's own name, which tempo inference reads");
+	}
+
+	test_bufOf_unknownKey {
+		this.assert(Break.bufOf(\noSuchBreakAnywhere).isNil, "an unknown key is nil, not an error");
+	}
+
 	// ----- the chop brush -------------------------------------------------
 
 	test_chop_buildsPattern {
@@ -166,6 +213,18 @@ TestBreak : UnitTest {
 		// in the live session it ran in.
 		Break.remove(key);
 		this.assert(Break.order.includes(key).not, "the test cleans up after itself");
+	}
+
+	test_durationHeuristic_wholeTrackUsesHint {
+		// A 4-minute track is past 32 beats at every plausible tempo, so the beat-count
+		// search comes up empty; the bare number in its name used to be thrown away
+		// and the track read as 120 bpm.
+		var g = Break.bpmFromDur(240.0, 80);
+		this.assertEquals(g[\bpm], 80, "the bare number is the tempo");
+		this.assertEquals(g[\beats], 320, "320 beats in four minutes at 80");
+		this.assertEquals(g[\src], \hint, "source recorded as hint");
+		this.assertEquals(Break.bpmFromDur(240.0, nil)[\src], \fallback,
+			"no number at all still falls back");
 	}
 
 	test_durationHeuristic_prefersPowerOfTwoBeats {

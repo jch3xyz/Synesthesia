@@ -25,23 +25,34 @@
 	// on the next bar with no gap, keeping every control where you left it.
 	// No argument cycles to the next break in the library.
 	brk { |name|
-		var key, entry, voice, isFirst, apply;
+		var key, entry, buf, voice, isFirst, apply, near;
 		if(Break.size == 0) {
 			"brk: no breaks loaded — Break.scan(<samples dir>). See Guides/Breaks.".warn;
 			^this
 		};
 		key = Break.resolveKey(name, Break.keyOf(this));
 		key ?? {
-			("brk: no break named \"" ++ name ++ "\" — have: "
-				++ Break.order.join(" ")).warn;
+			// a library can hold a thousand keys, so suggest rather than list them all
+			near = Break.order.select { |k| k.asString.contains(name.asString.toLower) };
+			("brk: no break named \"" ++ name ++ "\" — "
+				++ if(near.notEmpty) {
+					"did you mean: " ++ near.keep(10).join(" ")
+						++ if(near.size > 10) { " ..." } { "" }
+				} {
+					"Break.list(\"" ++ name ++ "\") searches files and folders too"
+				}).warn;
 			^this
 		};
 		entry = Break.at(key);
+		// Ask for the samples NOW, not inside `apply`: a swap waits for the next bar,
+		// and that wait is the time a library break needs to arrive on the server.
+		buf = Break.bufOf(key);
+		buf ?? { ("brk: \"" ++ key ++ "\" could not be loaded").warn; ^this };
 		isFirst = Break.voiceOf(this).isNil;
 		voice = Break.register(this, key);
 		apply = {
 			this.set(
-				\buf, entry[\buf].bufnum,
+				\buf, buf.bufnum,
 				\beats, entry[\beats],
 				\steps, voice[\steps]
 			);
@@ -179,8 +190,8 @@
 
 	// ---- break metadata -------------------------------------------------
 
-	// the mono Buffer holding this break
-	buf { ^Break.at(this) !? { |e| e[\buf] } }
+	// the mono Buffer holding this break (a library break is loaded on this call)
+	buf { ^Break.bufOf(this) }
 
 	// the break's own tempo (175.bpm sets the SESSION tempo — different receiver)
 	bpm { ^Break.at(this) !? { |e| e[\bpm] } }
@@ -214,15 +225,17 @@
 	chop { |spec, step, steps, amp = 0.5, vari = 1, flip = 0, hold = 8|
 		var entry = Break.at(this);
 		var key = this;
-		var vals;
+		var buf, vals;
 		entry ?? {
 			Error("chop: no break \"" ++ this ++ "\" — Break.list").throw
 		};
 		// Pbind ends the moment any key stream yields nil, so a missing buffer would
 		// quietly produce a pattern that plays nothing at all. Say so instead.
-		entry[\buf] ?? {
-			Error("chop: break \"" ++ this ++ "\" has no buffer — was the server"
-				" running when Break.scan ran?").throw
+		// (A library break is loaded here, while the pattern waits for its bar.)
+		buf = Break.bufOf(this);
+		buf ?? {
+			Error("chop: break \"" ++ this ++ "\" has no buffer — is the server"
+				" running?").throw
 		};
 		steps = (steps ? (entry[\beats] * 4)).asInteger.max(1);
 		step = step ? (entry[\beats] / steps);
@@ -230,7 +243,7 @@
 		if(vals.isEmpty) { vals = [0] };
 		^Pbind(
 			\instrument, \brk1,
-			\buf, entry[\buf],
+			\buf, buf,
 			// the event's \sustain is in beats, so the def needs the tempo to turn it
 			// into a window length; read per event, so it tracks a live tempo change
 			\tempo, Pfunc { Break.tempo },

@@ -37,8 +37,10 @@ Arrays of link::Classes/Buffer::s); sample-player and melodic SynthDefs (pitch
 argument named code::freq::); optionally standing effect returns
 (code::~verbIn::/code::~verb::, code::~delayIn::/code::~delay::) for
 link::#route::. For the breakbeat family, additionally: the code::\break:: and
-code::\brk1:: SynthDefs, and a scanned break library
-(code::Break.scan(<samples dir>)::, which a setup file normally does at boot).
+code::\brk1:: SynthDefs, and a break library — scanned and loaded
+(code::Break.scan(<samples dir>)::) and/or indexed and loaded on first use
+(code::Break.addLibrary(<library dir>, exclude: [...])::), which a setup file
+normally does at boot.
 Dependencies: Bjorklund (euclid rhythms and break masks), BenoitLib
 (link::#pat::), sc3-plugins (the code::\dfm:: recipe, code::\crush:: effect).
 Words that cannot find the environment warn and do nothing rather than error.
@@ -221,16 +223,28 @@ definitionList::
 slice-sequence buffer; later calls swap the sample on the next bar with emphasis::no
 gap::, keeping every other control where you left it (the grain generator reads its
 buffer once per grain, so sounding grains finish on the old break while new ones
-read the new one). No argument cycles the library.
+read the new one). No argument cycles the library. A break indexed from a library
+loads on first use; a swap requests it at evaluation and plays it on the bar, so the
+load is hidden. A name that is not a key gets suggestions rather than an error.
 code::
 ~d.brk(\amen); ~d.play;
 ~d.brk(\think);        // gapless swap
 ~d.brk;                // cycle
 ::
+## code::Break.list(match)::, code::Break.preload(keys)::
+|| Finding and readying material. code::list:: posts the registry — key, tempo,
+beats, length, which inference rule set the tempo — narrowed to keys, files or
+folders containing code::match:: when given. code::preload:: loads library breaks
+ahead of time, for the ones a set opens on.
+code::
+Break.list("fill");
+Break.preload(\gold_rush);
+::
 ## code::\break.bpm::, code::\break.len::, code::\break.buf::, code::\break.stretch::
-|| A break's own tempo, its length in beats, its mono Buffer, and the rate that would
-fit it to the session. (Note code::\amen.bpm:: emphasis::reads:: a break's tempo
-while code::175.bpm:: emphasis::sets:: the session tempo.)
+|| A break's own tempo, its length in beats, its mono Buffer (loaded by this call
+for a library break that has not played yet), and the rate that would fit it to
+the session. (Note code::\amen.bpm:: emphasis::reads:: a break's tempo while
+code::175.bpm:: emphasis::sets:: the session tempo.)
 ## code::\break.bpm_(n)::, code::\break.len_(n)::
 || Correct a wrong tempo guess emphasis::permanently:: — written to a
 code::_breaks.scd:: sidecar beside the audio and merged over inference at every

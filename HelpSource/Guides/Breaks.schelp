@@ -54,8 +54,9 @@ s.waitForBoot({
 ::
 
 Once you have real loops, put them in a folder whose name starts with
-code::breaks:: inside code::Setup/samples/:: and they load at boot. Everything
-below then works on code::\amen:: instead of code::\demo::.
+code::breaks:: inside code::Setup/samples/:: and they load at boot — or, for a
+whole sample library, see the section on big libraries below. Everything below
+then works on code::\amen:: instead of code::\demo::.
 
 SECTION:: Your first chopped break
 
@@ -327,6 +328,40 @@ code::len_:: sets the length in beats, and beats is the number the engine actual
 uses — a wrong beat count is what makes a loop play at half or double speed. If a
 break sounds like it is running at the wrong tempo, that is the first thing to
 fix, not code::speed::.
+::
+
+SECTION:: A big library
+
+A folder of a dozen loops can simply be loaded. A sample collection of a thousand
+cannot — as mono buffers it would be gigabytes — so point the registry at it
+instead, and it will emphasis::index:: every loop at boot and load each one the
+first time you play it:
+
+code::
+Break.addLibrary("~/Samples/Breaks", exclude: ["Kicks", "Snares"]);
+::
+
+It walks every folder, however deep. Each folder's own name feeds the tempo guess
+(packs that file loops in folders called code::93 BPM/:: are read correctly), and
+each folder keeps its own code::_breaks.scd:: sidecar. Packs also tend to ship
+folders of single hits — kicks, snares, pre-cut chops. Those are not loops, so name
+them in code::exclude::; folders called code::Chops:: or code::One Shots:: are
+skipped already. (One-shots belong in the ordinary sample dictionary, where
+code::\k.hits(...):: plays them.)
+
+Finding one loop among a thousand is a search, not a scroll:
+
+code::
+Break.list("funk");     // any key, file or folder containing "funk"
+~d.brk(\gold);          // not a key? brk suggests the ones that contain it
+::
+
+Loading on first use costs a few tens of milliseconds, and it is hidden: a swap asks
+for the samples when you evaluate it and plays them on the next bar. If a set must
+open on a library break, load it ahead of time:
+
+code::
+Break.preload(\gold_rush);
 ::
 
 SECTION:: Chopping your own playing
