@@ -31,7 +31,35 @@ subsection:: Session context
 METHOD:: space
 The performance ProxySpace: the interpreter variable code::p:: if it holds a
 ProxySpace, else the current environment if it is one. Warns and returns
-code::nil:: if neither — the words then do nothing rather than error.
+code::nil:: if neither — the words then do nothing rather than error. The space
+it returns has been through link::#*guard::.
+
+METHOD:: guard
+Protect a ProxySpace from a JITLib fault (present in SuperCollider 3.13) that
+silences a sound for good. Setup calls this once, right after it makes the space.
+
+Assigning a proxy on a running server sends its SynthDef but never marks the proxy
+as loaded. The first proxy that reads it loads it a second time, into the reader's
+own bundle, and that bundle becomes the one the proxy cancels when it is next
+reassigned. Reassign it before the bar line and the reader's start is cancelled
+instead: the reader never plays, and the post window shows
+code::FAILURE IN SERVER /s_new duplicate node ID::.
+code::
+~r = { 55 };
+~a = { SinOsc.ar(~r.kr * 4) * 0.1 ! 2 };
+~a.play;
+~r = { 49 };    // all within one bar, unguarded: ~a is silent from here on
+::
+The guard marks each proxy loaded as it is assigned, through the space's
+code::dispatch:: hook. It is idempotent, and a dispatch already on the space keeps
+running.
+argument:: space
+a link::Classes/ProxySpace::
+returns:: the space
+
+METHOD:: guarded
+argument:: space
+returns:: whether link::#*guard:: has been applied to this space.
 
 METHOD:: samples
 The sample dictionary (interpreter variable code::d::), or code::nil:: if unset.
@@ -140,4 +168,26 @@ discussion::
 code::
 Synesthesia.parseDegs("0 3 [0 2 4] . -3");
 // -> [ 0, 3, [0, 2, 4], \rest, -3 ]
+::
+
+METHOD:: parseChords
+Resolve chord names into an Array of note Arrays (semitones above C) and
+code::\rest:: markers. See link::Classes/Symbol#-chord#chord:: for the notation.
+Throws an link::Classes/Error:: naming any token it cannot read.
+argument:: input
+a space-separated link::Classes/String::, or an Array of Symbols and note Arrays
+discussion::
+code::
+Synesthesia.parseChords("Cm7 . G7 Abmaj7 C/E Cm7_4");
+// -> [ [0, 3, 7, 10], \rest, [7, 11, 14, 17], [8, 12, 15, 19], [4, 7, 12], [-12, -9, -5, -2] ]
+::
+
+METHOD:: chordName
+Translate a chord name from chart spelling to the spelling the ChordSymbol2 table
+uses. A name already in that spelling comes back unchanged.
+argument:: name
+discussion::
+code::
+Synesthesia.chordName("F#m7b5");   // -> "Fsm7flat5"
+Synesthesia.chordName("Abmaj7");   // -> "AbM7"
 ::

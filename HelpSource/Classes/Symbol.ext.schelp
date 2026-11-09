@@ -80,11 +80,28 @@ code::
 
 METHOD:: chord
 A harmony pattern from chord names, as a link::Classes/Pbind:: using the
-code::\note:: key. Requires the ChordSymbol library, whose symbols (like
-code::\Cm7:: or code::\Fm9_3:: — name, optional octave digit, optional duration
-after underscores) embed directly in pattern streams.
+code::\note:: key. Names are written the way a chart writes them and resolved to
+note numbers by link::Classes/Synesthesia#*parseChords::, through the table in the
+ChordSymbol2 quark (which must be installed).
+
+list::
+## root: a letter, then code::#:: or code::b:: — code::C::, code::F#::, code::Bb::
+## quality: code::m:: or code::min::, code::7::, code::maj7:: or code::M7::, code::m7::, code::m9::, code::dim::, code::aug:: or code::+::, code::sus2::, code::sus4::, code::6::, code::6/9::, code::m7b5::, code::7#5b9:: … a bare root is major. The whole table: code::ChordSymbol.shapes.keys::
+## bass note: code::C/E::
+## octave for one chord: code::Cm7_4:: is an octave down, code::Cm7_6:: an octave up (5 is the pattern's own register)
+## rest: code::.:: or code::~::
+::
+
+A name that cannot be read is an error naming it.
+
+note::
+Chord names are resolved here rather than left as Symbols in the pattern, because
+the ChordSymbol library reads a Symbol in a stream as a single note first: there
+code::\G7:: is the note G in octave 7, not a dominant seventh.
+::
 argument:: symbols
-a space-separated link::Classes/String:: of chord names, or an array of Symbols.
+a space-separated link::Classes/String:: of chord names, or an array of Symbols
+(arrays of note numbers pass through unchanged).
 argument:: dur
 beats per chord (default 4).
 argument:: amp
@@ -94,8 +111,9 @@ octave offset from the middle octave (default 0).
 returns:: a link::Classes/Pbind::
 discussion::
 code::
-~pads = \ping.chord("Cm7 Fm9 Ab6 G7", 4);
-~pads2 = \ping.chord("Cm7_3 Cm7_4", 8, oct: -1);   // explicit octaves per chord
+~pads = \ping.chord("Cm7 Fm9 Abmaj7 G7", 4);
+~pads = \ping.chord("Cm7 . F#m7b5 C/E", 2);        // a rest, chart accidentals, a bass note
+~pads = \ping.chord("Cm7_4 Cm7", 8, oct: -1);      // one chord an octave under the other
 ::
 
 METHOD:: drone

@@ -133,10 +133,12 @@ code::
 ~m = \sinfb.deg("0 3 5 [0 2 4]", 0.5, oct: 3);
 ::
 ## code::\synth.chord(symbols, dur, amp, oct)::
-|| Named harmony via the ChordSymbol library: code::"Cm7 Fm9_3":: (name, optional
-octave digit / inversion after underscore). Uses the code::\note:: key.
+|| Named harmony, written as on a chart: code::"Cm7 Fm9 Abmaj7 G7"::, code::F#m7b5::,
+code::C/E:: for a bass note, code::Cm7_4:: for one chord an octave down, code::.::
+for a rest. Resolved to note numbers through the ChordSymbol2 table; an unreadable
+name is an error. Uses the code::\note:: key.
 code::
-~pads = \bpfsaw.chord("Cm7 Fm9 Ab6 G7", 4);
+~pads = \bpfsaw.chord("Cm7 Fm9 Abmaj7 G7", 4);
 ::
 ## code::\recipe.drone(root, mult, wob, amp)::
 || A drone link::Classes/Function:: — assign it to a proxy. Recipes:

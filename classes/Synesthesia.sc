@@ -13,11 +13,12 @@
 Synesthesia {
 	classvar <version = "0.1.0";
 	classvar <droneRecipes, <fxRecipes;
-	classvar slots, derivedCount = 0;
+	classvar slots, derivedCount = 0, guarded;
 
 	*initClass {
 		Class.initClassTree(Spec);
 		slots = IdentityDictionary.new;
+		guarded = IdentitySet.new;
 
 		// perceptual/utility specs — the named-controls substrate (design rule 2)
 		Spec.add(\wob, [0.01, 10, \exp]);
@@ -92,11 +93,36 @@ Synesthesia {
 	// the ProxySpace this session performs in (Setup pushes it into `p`)
 	*space {
 		var cand = thisProcess.interpreter.p;
-		if(cand.isKindOf(ProxySpace)) { ^cand };
-		if(currentEnvironment.isKindOf(ProxySpace)) { ^currentEnvironment };
+		if(cand.isKindOf(ProxySpace)) { ^this.guard(cand) };
+		if(currentEnvironment.isKindOf(ProxySpace)) { ^this.guard(currentEnvironment) };
 		"Synesthesia: no ProxySpace found — run Setup first".warn;
 		^nil
 	}
+
+	// Protect a ProxySpace from a JITLib fault (SuperCollider 3.13) that silences a
+	// sound for good. Assigning a proxy on a running server sends its SynthDef but
+	// never marks the proxy as loaded. The first proxy that reads it therefore loads
+	// it again, into the reader's own bundle, and that bundle becomes the one the
+	// proxy will cancel when it is next reassigned. Reassign it before the bar line
+	// and the reader's start is cancelled instead: the reader never plays, and the
+	// server reports "/s_new duplicate node ID". Three lines do it:
+	//   ~r = { 55 };  ~a = { SinOsc.ar(~r.kr * 4) ! 2 };  ~r = { 49 };
+	// The guard marks each proxy loaded as it is assigned, which is what JITLib
+	// meant. Setup calls it; every Synesthesia word that needs the space also does.
+	// Idempotent, and any dispatch already on the space keeps running.
+	*guard { |space|
+		var prev;
+		if(space.isNil or: { guarded.includes(space) }) { ^space };
+		guarded.add(space);
+		prev = space.dispatch;
+		space.dispatch = { |key, obj|
+			prev.value(key, obj);
+			if(obj.notNil) { space.envir[key] !? { |px| px.synSettle } };
+		};
+		^space
+	}
+
+	*guarded { |space| ^guarded.includes(space) }
 
 	// the sample dictionary (Setup builds it into `d`)
 	*samples {
@@ -222,6 +248,93 @@ Synesthesia {
 			{ ("Synesthesia.parseDegs: skipping token \"" ++ tok ++ "\"").warn };
 		};
 		^out.asArray
+	}
+
+	// chord notation: names the way they are written on a chart — "Cm7 Fm9 Abmaj7 G7
+	// F#m7b5 C/E" — with . or ~ for a rest, and _4 / _6 to drop or lift one chord an
+	// octave. Returns an array of note Arrays | \rest.
+	//
+	// The names are resolved here, chord-first, through ChordSymbol2's own table.
+	// Left as Symbols in a \note stream they are resolved note-first instead, and a
+	// root letter followed by a digit is then a single note with an octave: \G7 is
+	// the note G seven octaves up (100 kHz at the default octave), not a dominant
+	// seventh. A name nothing can read is an error naming it, never a silent guess.
+	*parseChords { |input|
+		var toks = if(input.isKindOf(String)) {
+			input.split($ ).reject(_.isEmpty)
+		} { input.asArray };
+		^toks.collect { |tok| this.prChord(tok) }
+	}
+
+	// chart spelling -> the spelling ChordSymbol2's table uses:
+	//   "Abmaj7" -> "AbM7"   "F#m7b5" -> "Fsm7flat5"   "Bbmin" -> "Bbm"
+	//   "C6/9" -> "C6by9"    "C/E" -> "C_E" (bass note)
+	// A name already in that spelling (Cm7, Cm_eb, Cs7sharp5) comes back unchanged.
+	*chordName { |name|
+		var parts = name.asString.split($_);
+		var head = parts[0], rest = parts.drop(1);
+		var slash, bass, rootLen = 1, root, q, out = "";
+		if(head.isEmpty) { ^name.asString };
+		// a slash is a bass note (C/E) or a six-nine (C6/9)
+		slash = head.indexOf($/);
+		slash !? {
+			bass = head.drop(slash + 1);
+			head = head.keep(slash);
+			if(bass.notEmpty and: { bass.first.isDecDigit }) {
+				head = head ++ "by" ++ bass; bass = nil;
+			};
+		};
+		// the root: a letter, then sharps and flats. s is ChordSymbol2's sharp —
+		// unless it opens "sus"
+		while {
+			var c = head[rootLen];
+			c.notNil and: { rootLen < 3 } and: {
+				(c == $#) or: { c == $b }
+				or: { (c == $s) and: { head[rootLen + 1] != $u } }
+			}
+		} { rootLen = rootLen + 1 };
+		root = head.keep(rootLen).replace("#", "s");
+		q = head.drop(rootLen);
+		// the quality: # and b before a number are spelled out
+		q.do { |c, i|
+			out = out ++ case
+			{ c == $# } { "sharp" }
+			{ (c == $b) and: { q[i + 1].notNil } and: { q[i + 1].isDecDigit } } { "flat" }
+			{ c.asString };
+		};
+		q = case
+		{ out == "+" } { "aug" }
+		{ out == "dom7" } { "7" }
+		{ out.beginsWith("min") } { "m" ++ out.drop(3) }
+		{ out.beginsWith("maj") or: { out.beginsWith("Maj") } } {
+			// the table has maj9 and maj11, but major and major seventh are M and M7
+			switch(out.drop(3), "", { "M" }, "7", { "M7" }, { "maj" ++ out.drop(3) })
+		}
+		{ out };
+		bass !? { rest = [bass.replace("#", "s")] ++ rest };
+		^([root ++ q] ++ rest).join("_")
+	}
+
+	*prChord { |tok|
+		var lib, name, parts, octs, shift = 0, notes;
+		if(tok.isKindOf(String).not and: { tok.isKindOf(Symbol).not }) { ^tok };   // notes already
+		name = tok.asString;
+		if([".", "~", "", "r", "rest"].any { |x| x == name }) { ^\rest };
+		lib = \ChordSymbol.asClass ?? {
+			Error("chord: the ChordSymbol2 quark is not installed — chord names need it").throw
+		};
+		// a digit after an underscore is that chord's octave, counted the way the
+		// \octave key counts: 5 is the pattern's own register, 4 one octave under it
+		parts = this.chordName(name).split($_);
+		octs = parts.drop(1).select { |x| x.size == 1 and: { x[0].isDecDigit } };
+		if(octs.notEmpty) { shift = (octs.last.asInteger - 5) * 12 };
+		parts = [parts[0]] ++ parts.drop(1).reject { |x| x.size == 1 and: { x[0].isDecDigit } };
+		notes = lib.asNotes(parts.join("_").asSymbol);
+		if(notes.isKindOf(Array).not or: { notes.isEmpty } or: { notes.every(_.isNumber).not }) {
+			Error("chord: cannot read \"" ++ name ++ "\" — names look like Cm7, G7, Abmaj7,"
+				" F#m7b5, Csus4, C/E, Cm7_4 (every quality: ChordSymbol.shapes.keys)").throw
+		};
+		^notes + shift
 	}
 
 	*prIsIntToken { |tok|

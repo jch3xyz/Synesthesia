@@ -2,7 +2,7 @@
 //   \k.hits("x..x")      step-string drum Pbind from sample folder d["k"]
 //   \k.hits(3, 8)        euclidean overload
 //   \sinfb.deg("0 3 5")  scale-degree melody Pbind on a SynthDef
-//   \bpfsaw.chord("Cm7 Fm9")  ChordSymbol2 harmony Pbind
+//   \brush.chord("Cm7 G7")  chord-name harmony Pbind (names via ChordSymbol2)
 //   \dfm.drone(~r)       drone Function (assign to a proxy)
 //   \dfm.stack(~r, [1,2,4])  summed harmonic stack Function
 //
@@ -57,16 +57,13 @@
 		)
 	}
 
-	// named harmony via ChordSymbol2 — symbols embed directly in the \note stream
+	// named harmony: chord names as written on a chart, resolved to note numbers
+	// here (Synesthesia.parseChords) so the Pbind carries plain arrays in \note
 	chord { |symbols, dur = 4, amp = 0.3, oct = 0|
-		var toks = if(symbols.isKindOf(String)) {
-			symbols.split($ ).reject(_.isEmpty).collect(_.asSymbol)
-		} {
-			symbols.asArray
-		};
+		var chords = Synesthesia.parseChords(symbols);
 		^Pbind(
 			\instrument, this,
-			\note, Pseq(toks, inf),
+			\note, Pseq(chords.collect { |x| if(x == \rest) { Rest() } { x } }, inf),
 			\octave, 5 + oct,
 			\dur, dur,
 			\amp, amp,

@@ -32,7 +32,8 @@ build roadmap live in the companion repo
 `Vocabulary Sketch.scd`.
 
 **Checks:** `TestSynesthesiaParsers.run`, `TestBreak.run` and `TestBroadcast.run` in
-the IDE (no server needed), and `check-help.scd` after any help-file edit (runs
+the IDE (no server needed), `TestSynesthesiaGuard.run` (boots a small private server
+of its own for one test), and `check-help.scd` after any help-file edit (runs
 headless too). The live-server checks (`SetupCheck`, `BreakIntegration`,
 `BroadcastCheck` with its receiver stub) live in the companion repo's `Setup/`.
 

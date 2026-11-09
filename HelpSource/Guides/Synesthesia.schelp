@@ -166,7 +166,7 @@ code::
 ~k  = \k.hits("x..X 0.2.");        // step string: accents, digit picks sample variant
 ~sn = \s.hits(3, 8);               // euclidean: 3 hits spread over 8 steps
 ~m  = \ping.deg("0 3 5 7", 0.25);  // scale degrees, one per quarter of a beat
-~c  = \ping.chord("Cm7 Fm9", 4);   // named harmony (requires the ChordSymbol library)
+~c  = \ping.chord("Cm7 G7", 4);    // named harmony (requires the ChordSymbol2 quark)
 ~a  = \dfm.drone(~r);              // a self-oscillating filter drone (needs sc3-plugins)
 ~b  = \tone.stack(~r, [1, 3, 5]);  // odd harmonics of the root, in one proxy
 ::

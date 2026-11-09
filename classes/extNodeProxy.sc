@@ -8,6 +8,13 @@
 
 + NodeProxy {
 
+	// ---- guard ----------------------------------------------------------
+
+	// mark the proxy's SynthDefs as sent — see Synesthesia.guard. NodeProxy:put sends
+	// them when the server is running but leaves `loaded` false; only an extension
+	// can reach the variable.
+	synSettle { if(server.serverRunning) { loaded = true } }
+
 	// ---- sculpt ---------------------------------------------------------
 
 	// insert an effect in place: ~a.fx(\lpf, 800); ~a.fx(\verb, 0.3);
