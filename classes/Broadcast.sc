@@ -46,6 +46,11 @@
 // the sound, so the hook schedules the OSC send on SystemClock by that much (plus
 // any lag/timingOffset), landing it on the audible onset for receivers that ignore
 // bundle timetags. `timetags: true` sends a timestamped bundle at once instead.
+// Like a stem, the event stream follows the Monitor: a brush in a stopped proxy
+// keeps running unheard, and sends nothing until it is played again. "Heard" means
+// the Monitor has a group — true from the .play call, false from the .stop call —
+// not monitor.isPlaying, which waits for the server's reply and would lose the
+// first hits of a new brush (isAudible).
 //
 // STEMS: WHY A GAIN-TRACKING TAP RATHER THAN MIRRORING THE MONITOR. `proxy.stop`
 // stops only the Monitor; the proxy keeps running, so a naive tap on proxy.ar(2)
@@ -54,9 +59,10 @@
 // so one Monitor fades the main pair and the stem pair together), but that means
 // intercepting .play/.stop/.playN/.vol_ on every proxy — rewriting the one JITLib
 // surface the performer touches most, with every JITLib upgrade a risk. The tap
-// instead reads proxy.ar(2) post-fx and multiplies by a gain that follows
-// monitor.isPlaying and monitor.vol, lagged by the proxy's fadeTime (hush passes
-// its own fade time through prFadeHint). It is approximate — Lag is exponential
+// instead reads proxy.ar(2) post-fx and multiplies by a gain that follows the
+// Monitor — its vol while it has a group (isAudible), 0 once .stop has taken the
+// group away — lagged by the proxy's fadeTime (hush passes its own fade time
+// through prFadeHint). It is approximate — Lag is exponential
 // where the Monitor's fade is linear — but it is non-invasive, needs one lightweight
 // synth per stem, and a stem falls silent whenever its proxy does. Stem 0 is the
 // real main mix: a synth at the head of the root node reading hardware bus 0 with
@@ -209,6 +215,16 @@ Broadcast {
 
 	*isHidden { |key| ^key.asString.beginsWith(prefix) }
 
+	// Is the proxy being heard? Its Monitor has a group from the moment .play is
+	// called (even before the quant boundary, so a pattern's first hit is not lost
+	// waiting for the server to confirm) and loses it the instant .stop is called.
+	// monitor.isPlaying would answer true only after the server's /n_go reply — a
+	// fifth of a second in which the downbeat of a new brush would go unreported.
+	*isAudible { |proxy|
+		var monitor = proxy.monitor;
+		^monitor.notNil and: { monitor.group.notNil }
+	}
+
 	*hitAddress { |material, root| ^this.address(root ? this.root ? "/syn", "hit", material) }
 	*noteAddress { |material, root| ^this.address(root ? this.root ? "/syn", "note", material) }
 	*krAddress { |key, root| ^this.address(root ? this.root ? "/syn", "kr", key) }
@@ -303,10 +319,17 @@ Broadcast {
 	// Called from the event's play path, at the event's logical time, right after the
 	// server bundle for it was sent `~latency` ahead. Allocates the messages and one
 	// scheduling thunk, nothing else.
+	//
+	// Events follow audibility like stems do: JITLib puts the hosting proxy in ~proxy,
+	// and a brush playing into a stopped proxy (after .stop or hush) keeps running
+	// unheard — so it sends nothing. A pattern played outside any proxy has no ~proxy
+	// and is always heard, so it always sends.
 	*prOnEvent { |ev|
-		var msgs, delay, clock;
+		var msgs, delay, clock, proxy;
 		if(running.not or: { events.not }) { ^this };
 		if(ev.isRest) { ^this };
+		proxy = ev[\proxy];
+		if(proxy.notNil and: { this.isAudible(proxy).not }) { ^this };
 		msgs = this.eventMessages(ev);
 		msgs ?? { ^this };
 		clock = thisThread.clock;
@@ -471,7 +494,7 @@ Broadcast {
 			if(this.isHidden(key).not) {
 				index = stemTable.indexOf(proxy);
 				decision = this.stemDecision(index.notNil, proxy.source.notNil,
-					proxy.rate == \audio, proxy.isMonitoring);
+					proxy.rate == \audio, this.isAudible(proxy));
 				switch(decision,
 					\assign, {
 						index = this.prAssignStem(proxy, key);
@@ -542,7 +565,7 @@ Broadcast {
 	*prTrackGain { |proxy, index|
 		var monitor = proxy.monitor;
 		var gain, lag;
-		gain = if(monitor.notNil and: { monitor.isPlaying }) {
+		gain = if(this.isAudible(proxy)) {
 			if(monitor.vol.isNumber) { monitor.vol } { 1 }
 		} { 0 };
 		if(stemGains[index] != gain) {
