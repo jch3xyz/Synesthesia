@@ -444,7 +444,7 @@ definitionList::
 read from the event's play path (after any code::\callback:: of yours, which keeps
 running). The server message leaves code::~latency:: before the sound, so the OSC
 send is scheduled by that much and lands on the onset (±10 ms budget; measured
-at about a millisecond). Rests send nothing; a brush in a stopped proxy sends nothing.
+at one to two milliseconds). Rests send nothing; a brush in a stopped proxy sends nothing.
 ## Continuous
 || Every control-rate proxy in the space — roots, code::follow:: envelopes,
 code::pad:: proxies, code::mapExp::/code::mapLin:: derivatives, anything you make

@@ -295,8 +295,8 @@ proxies" was not instrumented.)
 
 **Event timing, measured.** Against the receiver stub in a second sclang on
 localhost, over 19 hits, with the audible onset taken as the event's logical time
-plus its latency: arrival minus onset was **0.5–1.1 ms mean, 2.2 ms worst** across
-runs — inside the ±10 ms budget with room to spare. UDP transit to another machine
+plus its latency: arrival minus onset was **0.5–2.0 ms mean, 2.5 ms worst** across
+five clean runs — inside the ±10 ms budget with room to spare. UDP transit to another machine
 on a switch adds well under a millisecond; a Wi-Fi hop would not.
 
 **Verification, as shipped.** `TestBroadcast` (quark; the manifest said to add to

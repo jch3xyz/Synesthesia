@@ -90,8 +90,8 @@ strong::Timing.:: The server bundle for an event goes out code::~latency::
 link::Classes/SystemClock:: by exactly that much (plus any code::\lag:: or
 code::\timingOffset::). It lands on the audible onset for receivers that ignore OSC
 bundle timetags, which is what Resolume and MadMapper are assumed to do. Measured
-against the receiver stub on this machine, a hit arrives about a millisecond after
-its onset (worst case just over two); the manifest's budget is ±10 ms. If the receiver does honour timetags, code::timetags: true:: sends a
+against the receiver stub on this machine, a hit arrives one to two milliseconds
+after its onset (worst case 2.5 ms); the manifest's budget is ±10 ms. If the receiver does honour timetags, code::timetags: true:: sends a
 timestamped bundle immediately instead and lets the receiver do the waiting.
 
 Rests send nothing. And like a stem, the event stream follows audibility: JITLib
