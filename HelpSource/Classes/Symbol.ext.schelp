@@ -272,3 +272,154 @@ code::
 METHOD:: stretch
 The playback rate that would make this break fit the current session tempo.
 returns:: a number
+
+subsection:: Synesthesia painting words
+
+In the painting register (link::Classes/Paint::) the Symbol is a strong::colour::
+— a tube in code::Paint.palette:: — and the method is the strong::tool:: that
+applies it: pigment × applicator. Each tool owns one voice (a SynthDef from the
+companion repo's code::Setup/SynthDefs::, rebindable through code::Paint.tools::)
+and returns a plain link::Classes/Pbind:: carrying per-event code::\hue::,
+code::\sat:: and code::\val:: within the tube's spread, placement, and the tags
+Broadcast reads. Pitch and time stay music words: chord names, degrees, step
+strings and durations ride in the call unchanged. code::brush(\orange, "Cm7 G7")::
+is the same expression as code::\orange.brush("Cm7 G7")::.
+
+METHOD:: brush
+A sustained, legato stroke on the code::\brush:: voice.
+argument:: notes
+chord names (code::"Cm7 G7"::, as in link::#-chord::), scale degrees
+(code::"0 3 5 [0 2 4]"::, as in link::#-deg::) or a step string (code::"x..x"::,
+one note in rhythm). Default code::"0"::.
+argument:: dur
+beats per note, or per character of a step string (default 4).
+argument:: amp
+amplitude (default 0.25).
+argument:: at
+pan position, −1..1 or a pattern (default 0).
+argument:: legato
+note length as a fraction of dur (default 0.95).
+argument:: oct
+the octave (default 5).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~pad = \orange.brush("Cm7 Fm9 Abmaj7 G7", 4);
+~pad = \orange.brush("Cm7 Fm9 Abmaj7 G7", 4).darker(0.3);
+~pad = \blue.brush("0 3 5 7", 1, legato: 0.5);
+::
+
+METHOD:: mark
+Discrete pitched events on the code::\mark:: voice.
+argument:: notes
+as for link::#-brush:: (default code::"0"::).
+argument:: dur
+beats per note (default 0.25).
+argument:: amp
+amplitude (default 0.3).
+argument:: at
+pan position (default 0).
+argument:: oct
+the octave (default 5).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~m = \blue.mark("0 3 5 7", 0.25);
+~m = \blue.mark("Cm7 G7", 1);        // chords, as stabs
+::
+
+METHOD:: dab
+Rhythmic touches on one note, on the code::\mark:: voice.
+argument:: steps
+a step string (default code::"x..."::, which with the default step is one touch
+per bar).
+argument:: step
+beats per character (default 1).
+argument:: amp
+amplitude (default 0.4); accents multiply it.
+argument:: at
+pan position (default 0).
+argument:: oct
+the octave (default 5).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~t = \red.dab;                 // one touch a bar
+~t = \red.dab("x..x", 0.5);    // a figure
+::
+
+METHOD:: drip
+Sparse stochastic touches on the code::\mark:: voice: Dust-like timing, notes
+drawn at random from the set.
+argument:: rate
+touches per beat, on average (default 1).
+argument:: notes
+degrees or chord names to draw from (default code::"0"::).
+argument:: amp
+amplitude (default 0.3).
+argument:: at
+pan position (default 0).
+argument:: oct
+the octave (default 5).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~dr = \violet.drip(2, "0 3 5 7");
+::
+
+METHOD:: spray
+A grain cloud at the root: the code::\spray:: voice, or code::\sprayb:: over a
+buffer.
+argument:: root
+a frequency, a control proxy (code::~r::, followed live), a pattern, or nothing —
+then the canvas's code::~r::, else 55 Hz.
+argument:: dens
+grains per second (default 18).
+argument:: dur
+beats between retriggers of the cloud (default 4; it overlaps itself).
+argument:: amp
+amplitude (default 0.3).
+argument:: at
+pan position (default 0).
+argument:: buf
+a link::Classes/Buffer:: or the name of a folder in code::d:: (its latest capture):
+then the cloud is sprayed over the buffer with the code::\sprayb:: voice, which
+needs a mono buffer — code::rec:: captures are.
+argument:: size
+grain length in seconds (the voice's default when omitted).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~cloud = \cyan.spray(~r, dens: 25);
+rec(8);  ~g = \grey.spray(buf: \live);
+::
+
+METHOD:: wash
+A texture bed at the root, on the code::\wash:: voice.
+argument:: root
+as for link::#-spray::.
+argument:: dur
+beats between retriggers of the bed (default 16; it overlaps itself).
+argument:: amp
+amplitude (default 0.25).
+argument:: at
+pan position (default 0).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+~bed = \grey.wash(~r);  ~bed.fade(8).play;
+::
+
+METHOD:: mix
+A pigment between this tube and another — see link::Classes/Paint#*mix::. Hue
+takes the shorter way round the wheel.
+argument:: other
+a colour (any form link::Classes/Paint#*color:: accepts).
+argument:: x
+0 is this colour, 1 is the other (default 0.5).
+returns:: a colour (an link::Classes/Event::), usable wherever a colour is.
+discussion::
+code::
+~bed = \grey.mix(\blue, 0.4).wash(~r);
+Paint.palette[\dusk] = \orange.mix(\violet, 0.6);
+::

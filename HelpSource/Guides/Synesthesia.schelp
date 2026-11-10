@@ -171,6 +171,28 @@ code::
 ~b  = \tone.stack(~r, [1, 3, 5]);  // odd harmonics of the root, in one proxy
 ::
 
+SUBSECTION:: Painting with colour
+
+The painting register says the same things in a painter's words: a
+emphasis::colour:: is a timbre (hue, sat, val — the axes every voice of the
+palette speaks) and a emphasis::tool:: is one voice applied in time. The Symbol
+is the tube, the method is the tool, and pitch and time stay music words. Every
+stroke is a plain Pbind and every move a Pbindf, so you can drop the register at
+any moment. See link::Classes/Paint::.
+
+code::
+Paint.colors;                                 // red orange yellow green cyan blue violet magenta grey white black
+~pad = \orange.brush("Cm7 Fm9 Abmaj7 G7", 4); // a sustained stroke
+~m   = \blue.mark("0 3 5 7", 0.25);           // discrete events
+~t   = \red.dab("x..x", 0.5);                 // touches on one note
+~dr  = \violet.drip(2);                       // sparse, random touches
+~bed = \grey.wash(~r);                        // a bed at the root
+~cl  = \cyan.spray(~r, dens: 25);             // a grain cloud at the root
+~pad = \orange.brush("Cm7 G7").darker(0.3);   // a move on a pattern
+~pad.cooler;                                  // a move on the running proxy
+~bed = \grey.mix(\blue, 0.4).wash(~r);        // a pigment between two tubes
+::
+
 SUBSECTION:: Sculpting one sound
 
 Effects insert onto a proxy in place, by name, and stack in the order you add them.
@@ -337,9 +359,9 @@ wire — the feature's acceptance test.
 SECTION:: Where this is going
 
 Synesthesia is being built in phases. This page documents the current audio
-language and the Broadcast layer over it. A perceptual "painting" register was
-planned and then dropped: the flexible vocabulary underneath it proved to be the
-better language. Planned next: an auto-generated control panel driven by the
-named-controls substrate, and perception (hands, face) as a control surface. The
-design principle throughout: nothing auxiliary ever needs typed commands during a
-performance — Broadcast is the first feature built on that rule.
+language, the painting register over it (link::Classes/Paint:: — its palette and
+its words are a first set, to be calibrated and renamed by ear) and the Broadcast
+layer. Planned next: an auto-generated control panel driven by the named-controls
+substrate, and perception (hands, face) as a control surface. The design principle
+throughout: nothing auxiliary ever needs typed commands during a performance —
+Broadcast is the first feature built on that rule.

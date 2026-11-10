@@ -49,6 +49,7 @@ table::
 ## strong::Address:: || strong::Arguments:: || strong::When::
 ## code::/syn/hit/<folder>:: || amp, index || every code::hits:: hit and every code::chop:: slice: amplitude (after accents), then the sample variant or slice number
 ## code::/syn/note/<synthdef>:: || amp, pitch, dur || every code::deg:: note (pitch is the scale degree) and every code::chord:: note (pitch is the MIDI note); a chord is one message per note, all at the same instant; dur in beats
+## code::/syn/paint/<tool>:: || amp, pitch, dur, hue, sat, val || every note of a painted stroke (link::Classes/Paint::: code::brush::, code::mark::, code::dab::, code::drip::, code::spray::, code::wash::): pitch is the MIDI note (a cloud's root as a MIDI note), then the event's colour, 0..1 each — its timbre coordinates are its screen colour
 ## code::/syn/kr/<proxyKey>:: || value || each control-rate proxy, at the continuous rate, in its native range
 ## code::/syn/krn/<proxyKey>:: || value01 || the same, normalised 0..1 through the link::Classes/Spec:: registered under the proxy's key (where there is one)
 ## code::/syn/tempo:: || bpm || at the continuous rate

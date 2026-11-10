@@ -1,0 +1,272 @@
+TITLE:: Paint
+summary:: The painting register of Synesthesia — colours and tools over the audio words
+categories:: Live Coding>Synesthesia
+related:: Guides/Synesthesia, Reference/Synesthesia-Reference, Classes/Synesthesia, Classes/Symbol, Classes/Pattern, Classes/NodeProxy, Classes/Broadcast
+
+DESCRIPTION::
+The painting register describes timbre the way it is perceived — as colour — and
+application in time the way a painter would: strong::pigment × applicator::. It
+sits over the engineering words of link::Guides/Synesthesia:: and never replaces
+them. Every colour word evaluates to the same plain objects as every other word (a
+link::Classes/Pbind::, a link::Classes/NodeProxy::), so you can drop the register
+at any moment and reach the descriptive layer underneath: a stroke is a Pbind with
+code::\hue::, code::\sat:: and code::\val:: keys, a move is a link::Classes/Pbindf::
+on one of them.
+
+subsection:: Colours
+
+A colour is a coordinate in the space every voice of the palette speaks —
+code::hue::, code::sat::, code::val::, each 0..1 (the contract in the companion
+repo's code::CONVENTIONS.md::): emphasis::hue:: is an angle on the voice's timbre
+wheel (0 and 1 are the same place), emphasis::sat:: is hue-identity strength (0 is
+grey, 1 vivid, the extreme top neon), emphasis::val:: is light (0 is black, 1 is
+air). A colour also has a emphasis::spread::: pigment is never flat, so each event
+draws its own coordinates from a small neighbourhood of the tube.
+
+The palette is eleven tubes named after the screen colour wheel — code::red
+orange yellow green cyan blue violet magenta grey white black:: — because a
+colour's timbre coordinates emphasis::are:: its screen colour: link::Classes/Broadcast::
+sends them with every painted event, and a VJ can draw them unchanged. The names
+are a first set to play and rename by ear; the lexicon is discovered, not
+specified. Add your own tubes in your setup file:
+code::Paint.palette[\rust] = Paint.color(0.05, 0.8, 0.35);::
+
+Wherever a colour is expected you may give a palette name (code::\orange::), an
+array code::[hue, sat, val, spread]::, an event code::(hue: 0.3, sat: 0.7, val: 0.5)::,
+a link::Classes/Color::, or a mix of two colours (link::#*mix::).
+
+subsection:: Tools
+
+A tool is one voice and one way of applying it in time. The voices are the
+SynthDefs of the companion repo's code::Setup/SynthDefs:: (loaded by
+code::Setup.scd::); link::#*tools:: maps each tool to its voice, and any SynthDef
+that speaks code::hue::/code::sat::/code::val:: can take a tool's place. Pitch and
+time stay music words: chord names, scale degrees, step strings and durations ride
+in the tool call unchanged, and placement (code::at::, a pan position) belongs to
+the stroke, not the pigment. The words live on link::Classes/Symbol::, so
+code::\orange.brush("Cm7 G7"):: and code::brush(\orange, "Cm7 G7"):: are the same
+expression.
+
+table::
+## strong::Word:: || strong::Voice:: || strong::Application in time::
+## code::\c.brush(notes, dur):: || code::\brush:: || a sustained, legato stroke — chord names, degrees or a step string
+## code::\c.mark(notes, dur):: || code::\mark:: || discrete pitched events
+## code::\c.dab(steps, step):: || code::\mark:: || rhythmic touches on one note; a touch per bar by default
+## code::\c.drip(rate, notes):: || code::\mark:: || sparse stochastic touches: Dust-like timing, notes drawn at random
+## code::\c.spray(root, dens):: || code::\spray:: (code::\sprayb:: over a buffer) || a grain cloud at the root
+## code::\c.wash(root):: || code::\wash:: || a texture bed at the root
+::
+
+Every stroke is tagged for Broadcast with code::\syn_brush:: (the tool),
+code::\syn_material:: (the voice) and code::\syn_color:: (the tube), and goes out
+on code::/syn/paint/<tool>:: as amp, pitch, dur, hue, sat, val.
+
+subsection:: Moves
+
+Perceptual sculpt verbs — code::.darker::, code::.lighter::, code::.paler::,
+code::.saturate::, code::.warmer::, code::.cooler::, each taking a step size, and
+code::.paint(colour):: to recolour outright. On a link::Classes/Pattern:: they
+return a new pattern that steps the axis from the value each event already carries
+(or the voice's own default), so moves chain and compound. On a
+link::Classes/NodeProxy:: they act on what the proxy holds: a pattern source is
+reassigned (crossfaded, on the grid), a synth source has its code::hue::/code::sat::/
+code::val:: controls moved — so a drone recipe joins the register the moment it
+names those controls. Warmer and cooler step toward the warm and cool poles of
+the wheel the shorter way round, never past them.
+
+CLASSMETHODS::
+
+METHOD:: palette
+The tubes: an link::Classes/IdentityDictionary:: from name to colour. Edit it in
+your setup file to add, rename or retune a tube.
+
+METHOD:: colors
+The tube names, sorted.
+
+METHOD:: color
+A colour. With numbers, a new one; with anything else, the colour that thing
+denotes.
+argument:: hue
+a number (the hue, 0..1, wrapping), or a colour form: a palette name as Symbol or
+String, code::[hue, sat, val, spread]::, an event with code::hue::/code::sat::/
+code::val::/code::spread:: keys, or a link::Classes/Color::.
+argument:: sat
+0..1 (default 0.6). Only with a numeric hue.
+argument:: val
+0..1 (default 0.5). Only with a numeric hue.
+argument:: spread
+how far each event may wander from the tube: hue ± spread, sat and val ± spread/2
+(default 0.03).
+argument:: name
+an optional name, used as the code::\syn_color:: tag.
+returns:: an link::Classes/Event:: with the keys code::hue::, code::sat::, code::val::,
+code::spread::, code::name::. An unknown palette name, or something that is not a
+colour, is an error naming it.
+
+METHOD:: mix
+A pigment between two colours: sat, val and spread interpolate; hue takes the
+shorter way round the wheel, so red and magenta mix through the purples.
+argument:: a
+a colour (any form).
+argument:: b
+a colour (any form).
+argument:: x
+0 is strong::a::, 1 is strong::b:: (default 0.5).
+returns:: a colour, named after both tubes when both are named (code::\orange_blue::).
+
+METHOD:: colorKeys
+The link::Classes/Pbind:: pairs that paint a stroke: code::\hue::, code::\sat::
+and code::\val:: as per-event samples within the colour's spread, and the
+code::\syn_color:: tag.
+argument:: color
+a colour (any form).
+returns:: an array of key/pattern pairs — code::Pbind(*Paint.colorKeys(\blue))::.
+
+METHOD:: tools
+The map from tool to voice: an link::Classes/IdentityDictionary::. Rebind a tool
+to any SynthDef that speaks the colour axes: code::Paint.tools[\dab] = \kick::.
+
+METHOD:: brush
+METHOD:: mark
+METHOD:: dab
+METHOD:: drip
+METHOD:: spray
+METHOD:: wash
+The tool words with the colour first — the bodies behind the words on
+link::Classes/Symbol#-brush#Symbol:: (a tube's name) and on link::Classes/Event::
+(any other colour: a mix, or code::(hue: sat: val:):: written out), which forward
+here. Arguments as documented on Symbol, after strong::color::.
+argument:: color
+a colour (any form link::#*color:: accepts).
+returns:: a link::Classes/Pbind::
+discussion::
+code::
+Paint.brush(\orange, "Cm7 G7");             // the same stroke three ways
+\orange.brush("Cm7 G7");
+brush(\orange, "Cm7 G7");
+\orange.mix(\blue, 0.3).brush("Cm7 G7");    // a mix takes the words too
+(hue: 0.3, sat: 0.7, val: 0.5).mark("0 3 5");
+::
+
+METHOD:: voiceFor
+The voice a tool owns; an unknown tool is an error.
+
+METHOD:: stroke
+The Pbind every tool word returns: the tool's voice, the given pairs, the
+placement, the pigment and the Broadcast tags.
+argument:: tool
+a key of link::#*tools::.
+argument:: color
+a colour (any form).
+argument:: pairs
+the tool's own key/value pairs (pitch, time, density…).
+argument:: at
+pan position, −1..1 or a pattern (default 0).
+returns:: a link::Classes/Pbind::
+
+METHOD:: strokeKind
+What a notes argument is.
+returns:: code::\chords:: (chord names such as code::"Cm7 G7"::, or an array of
+Symbols), code::\steps:: (a step string such as code::"x..X"::), or code::\degs::
+(scale degrees — a string or an array of numbers).
+
+METHOD:: notePairs
+The pitch/time pairs of a pitched stroke, from any notes form.
+argument:: notes
+chord names, a step string, or degrees (see link::#*strokeKind::).
+argument:: dur
+beats per note, or per character of a step string (default 0.5). May be a pattern
+(not with a step string).
+argument:: amp
+amplitude (default 0.3). Accents in a step string multiply it.
+argument:: oct
+the octave (default 5).
+argument:: shuffle
+true draws notes at random instead of in order (default false).
+returns:: an array of key/pattern pairs.
+
+METHOD:: rootPattern
+The root a cloud sits on, as something a code::\freq:: key can hold.
+argument:: root
+a number, a link::Classes/Pattern::, a control proxy (followed live, through
+code::Pkr::), a function, or nil — then the canvas's code::~r:: if it has a
+source, otherwise 55 Hz.
+
+METHOD:: bufferOf
+The buffer a buffer cloud sprays: a link::Classes/Buffer::, or the name of a folder
+in code::d:: (its latest capture — what code::rec:: appended last).
+
+METHOD:: moved
+One step of a move, pure.
+argument:: value
+the current value of the axis.
+argument:: axis
+code::\hue::, code::\sat:: or code::\val::.
+argument:: delta
+the step. sat and val clip to 0..1; hue wraps.
+argument:: toward
+for hue only: a pole to step toward the shorter way round, never past it. Without
+one, hue simply adds and wraps.
+returns:: the new value.
+
+METHOD:: move
+A move on a pattern: a link::Classes/Pbindf:: that steps the axis from the value
+each event carries, or from the voice's default (link::#*axisDefault::) when the
+pattern never set it.
+argument:: pattern
+an event pattern.
+argument:: axis
+code::\hue::, code::\sat:: or code::\val::.
+argument:: delta
+the step.
+argument:: toward
+a hue pole, or nil.
+returns:: a new pattern.
+
+METHOD:: verbMove
+The table the verbs share: the axis, delta and pole for a verb name
+(code::\darker::, code::\lighter::, code::\paler::, code::\saturate::,
+code::\warmer::, code::\cooler::) and a step size.
+returns:: code::[axis, delta]:: or code::[axis, delta, pole]::.
+
+METHOD:: axisDefault
+A voice's own natural value for an axis, read from its link::Classes/SynthDesc::;
+the contract's defaults (hue 0.05, sat 0.6, val 0.5) when the voice is unknown.
+
+METHOD:: warmPole
+METHOD:: coolPole
+The hue positions code::.warmer:: and code::.cooler:: move toward: orange
+(0.08) and blue (0.62).
+
+EXAMPLES::
+
+code::
+// after Setup.scd (the voices live in the companion repo's Setup/SynthDefs)
+Paint.colors;                                   // the tubes
+
+~pad = \orange.brush("Cm7 Fm9 Abmaj7 G7", 4);   ~pad.play;
+~pad = \orange.brush("Cm7 Fm9 Abmaj7 G7", 4).darker(0.3);   // the same stroke, darker
+~pad.cooler;                                    // move the running proxy's pattern toward blue
+~pad.paint(\violet);                            // or recolour it outright
+
+~m  = \blue.mark("0 3 5 7", 0.25);  ~m.play;    // discrete events
+~t  = \red.dab("x..x", 0.5);        ~t.play;    // touches on one note
+~dr = \violet.drip(2);              ~dr.play;   // sparse, random touches
+
+~r = { 55 };
+~bed   = \grey.wash(~r);                ~bed.fade(8).play;    // a bed at the root
+~cloud = \cyan.spray(~r, dens: 25);     ~cloud.fade(4).play;  // a cloud at the root
+~bed   = \grey.mix(\blue, 0.4).wash(~r);                      // a pigment between two tubes
+
+// drop the register: a stroke is a Pbind like any other
+~m = \blue.mark("0 3 5 7", 0.25).fast(2).jux(_.slow(2));
+~m = Pbindf(\blue.mark("0 3 5 7", 0.25), \hue, Pseq([0.1, 0.6], inf));
+
+// a drone recipe that names the axes joins the register
+Synesthesia.droneRecipes[\lit] = { |root, mult = 1, wob = 0.1, amp = 0.3|
+	var f = root * mult;
+	RLPF.ar(Saw.ar([f, f * 1.003], 0.2), f * \val.kr(0.5).linexp(0, 1, 1, 24), 0.3) * \amp.kr(amp)
+};
+~a = \lit.drone(~r);  ~a.play;
+~a.darker(0.2);                                 // moves the \val control
+::

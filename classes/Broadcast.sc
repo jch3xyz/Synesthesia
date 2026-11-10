@@ -230,12 +230,16 @@ Broadcast {
 	*krAddress { |key, root| ^this.address(root ? this.root ? "/syn", "kr", key) }
 	*krnAddress { |key, root| ^this.address(root ? this.root ? "/syn", "krn", key) }
 	*goneAddress { |key, root| ^this.address(root ? this.root ? "/syn", "gone", key) }
+	*paintAddress { |tool, root| ^this.address(root ? this.root ? "/syn", "paint", tool) }
 
 	// The messages one event produces, as [[address, arg, arg...], ...], or nil for a
 	// rest or an event that did not come from a brush. Pure: no server, no state.
 	//   hits/chop  -> amp, variant index (the sample picked, or the slice)
 	//   deg        -> amp, degree, dur    — one message per degree of a bracket chord
 	//   chord      -> amp, midinote, dur  — one message per note of the chord
+	//   paint tools (brush, mark, dab, drip, spray, wash — Paint.tools)
+	//              -> amp, midinote, dur, hue, sat, val — one message per note, on
+	//                 /syn/paint/<tool>: a colour's coordinates are its screen colour
 	*eventMessages { |ev, root|
 		var brush = ev[\syn_brush], material = ev[\syn_material];
 		var amp, dur, pitches, address;
@@ -245,6 +249,13 @@ Broadcast {
 		amp = ev.use { ~amp.value } ? 0;
 		dur = ev[\dur];
 		dur = if(dur.isNumber) { dur } { dur.value ? 0 };
+		if(Paint.tools.includesKey(brush)) {
+			pitches = ev.use { ~freq.value }.asArray.collect(_.cpsmidi);
+			address = this.paintAddress(brush, root);
+			^pitches.collect { |pitch|
+				[address, amp, pitch, dur, ev[\hue] ? 0, ev[\sat] ? 0, ev[\val] ? 0]
+			}
+		};
 		switch(brush,
 			\hits, { ^[[this.hitAddress(material, root), amp, ev[\syn_index] ? 0]] },
 			\chop, { ^[[this.hitAddress(material, root), amp, ev[\syn_index] ? ev[\slice] ? 0]] },

@@ -327,3 +327,39 @@ Realign the loop, the slice grid and the sequence to the bar. Alignment is exact
 when a voice starts and after any resync; a mid-set tempo change can leave the loop
 boundary off the bar until you ask for this.
 returns:: this proxy
+
+subsection:: Synesthesia painting moves
+
+The verbs of link::Classes/Pattern#-darker#the painting register::, on the proxy
+that holds the sound. A proxy whose source is a pattern has that pattern moved
+and reassigned (crossfaded, on the grid, like any reassignment). A proxy whose
+source is a synth has its code::hue::/code::sat::/code::val:: controls moved from
+their current values — so a drone recipe joins the register the moment it names
+those controls — and a source that speaks none warns and does nothing.
+
+METHOD:: darker
+METHOD:: lighter
+METHOD:: paler
+METHOD:: saturate
+METHOD:: warmer
+METHOD:: cooler
+See link::Classes/Pattern#-darker::. Each returns this proxy.
+argument:: x
+the step (default 0.2; 0.1 for warmer/cooler).
+returns:: this proxy
+
+METHOD:: paint
+Recolour what the proxy holds: a pattern source samples the colour from now on, a
+synth source has its axes set to the tube's centre.
+argument:: color
+a colour (any form link::Classes/Paint#*color:: accepts).
+returns:: this proxy
+discussion::
+code::
+~pad = \orange.brush("Cm7 G7");  ~pad.play;
+~pad.darker(0.3);          // the pattern is reassigned darker
+~pad.paint(\violet);       // and recoloured
+
+~a = \lit.drone(~r);  ~a.play;    // a recipe whose graph reads \val.kr
+~a.darker;                 // moves the control: ~a.set(\val, ...)
+::

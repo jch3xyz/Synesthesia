@@ -220,4 +220,26 @@ TestBroadcast : UnitTest {
 		this.assert(Broadcast.resolveAddr("no.such.host.invalid").isNil,
 			"an unresolvable host is nil, not an error — start warns once and does nothing");
 	}
+
+	// ----- the painting register on the wire -------------------------------
+
+	test_payload_paint {
+		var ev = \orange.brush("Cm7").asStream.next(Event.default);
+		var msgs = Broadcast.eventMessages(ev, "/syn");
+		this.assertEquals(msgs.size, 4, "one message per note of the chord");
+		this.assertEquals(msgs[0][0], "/syn/paint/brush", "the tool's own paint address");
+		this.assertEquals(msgs[0].size, 7, "amp, pitch, dur, hue, sat, val");
+		this.assertFloatEquals(msgs[0][2], 60, "pitch is the MIDI note", 1e-6);
+		this.assertEquals(msgs[0][3], 4, "dur");
+		this.assert((msgs[0][4] - 0.08).abs <= 0.03, "hue is the tube's, within its spread");
+		this.assert(msgs[0][5].inclusivelyBetween(0, 1) and: { msgs[0][6].inclusivelyBetween(0, 1) },
+			"sat and val ride along");
+		ev = \grey.wash(55).asStream.next(Event.default);
+		msgs = Broadcast.eventMessages(ev, "/syn");
+		this.assertEquals(msgs[0][0], "/syn/paint/wash", "a cloud paints too");
+		this.assertFloatEquals(msgs[0][2], 55.cpsmidi, "a cloud's pitch is its root, as a MIDI note", 1e-6);
+		this.assertEquals(msgs[0][3], 16, "dur");
+		ev = \red.dab.asStream.next(Event.default);
+		this.assertEquals(Broadcast.eventMessages(ev, "/syn")[0][0], "/syn/paint/dab", "dab is its own tool on the wire");
+	}
 }

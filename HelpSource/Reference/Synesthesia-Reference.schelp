@@ -173,6 +173,87 @@ code::
 ::
 ::
 
+SECTION:: Painting: colours and tools
+
+The painting register (link::Classes/Paint::) describes timbre as emphasis::colour::
+and application in time as a emphasis::tool::: pigment × applicator. A colour is
+code::hue:: / code::sat:: / code::val:: (0..1 — the contract every voice of the
+palette speaks: hue an angle on the voice's timbre wheel, sat hue-identity
+strength from grey to vivid, val light from black to air) plus a spread, so each
+event draws its own coordinates from a small neighbourhood of the tube. The tubes
+are named after the screen colour wheel — code::red orange yellow green cyan blue
+violet magenta grey white black:: (code::Paint.colors::) — because a colour's
+timbre coordinates are its screen colour, which link::#Broadcast:: sends with every
+painted event. Add tubes in setup: code::Paint.palette[\rust] = Paint.color(0.05, 0.8, 0.35)::.
+A colour is also code::[hue, sat, val]::, code::(hue: sat: val:)::, a
+link::Classes/Color::, or a mix.
+
+A tool owns one voice (the SynthDefs in the companion repo's code::Setup/SynthDefs::;
+code::Paint.tools:: rebinds) and returns a plain link::Classes/Pbind:: tagged for
+Broadcast. Pitch and time stay music words; code::brush(\orange, "Cm7 G7"):: and
+code::\orange.brush("Cm7 G7"):: are the same expression. Every stroke takes
+code::amp:: and a placement code::at:: (pan, patternable).
+
+definitionList::
+## code::\colour.brush(notes, dur, amp, at, legato, oct)::
+|| A sustained, legato stroke on code::\brush::. code::notes:: is chord names,
+degrees or a step string (one note in rhythm); code::dur:: is beats per note
+(default 4).
+code::
+~pad = \orange.brush("Cm7 Fm9 Abmaj7 G7", 4);
+::
+## code::\colour.mark(notes, dur, amp, at, oct)::
+|| Discrete pitched events on code::\mark:: (default dur 0.25).
+code::
+~m = \blue.mark("0 3 5 7", 0.25);
+::
+## code::\colour.dab(steps, step, amp, at, oct)::
+|| Rhythmic touches on one note, on code::\mark::; a touch per bar by default.
+code::
+~t = \red.dab("x..x", 0.5);
+::
+## code::\colour.drip(rate, notes, amp, at, oct)::
+|| Sparse stochastic touches on code::\mark::: Dust-like timing at code::rate::
+touches per beat, notes drawn at random.
+code::
+~dr = \violet.drip(2, "0 3 5 7");
+::
+## code::\colour.spray(root, dens, dur, amp, at, buf, size)::
+|| A grain cloud at the root (code::\spray::; code::\sprayb:: over a buffer —
+code::buf:: a Buffer or a folder name in code::d::, its latest capture). The root
+is a frequency, a control proxy followed live, a pattern, or nothing — then
+code::~r::.
+code::
+~cloud = \cyan.spray(~r, dens: 25);
+::
+## code::\colour.wash(root, dur, amp, at)::
+|| A texture bed at the root, on code::\wash::.
+code::
+~bed = \grey.wash(~r);  ~bed.fade(8).play;
+::
+## code::\colour.mix(other, x)::
+|| A pigment between two tubes (hue the shorter way round the wheel); usable
+wherever a colour is.
+code::
+~bed = \grey.mix(\blue, 0.4).wash(~r);
+::
+## code::pattern.darker(x) .lighter(x) .paler(x) .saturate(x) .warmer(x) .cooler(x) .paint(colour)::
+|| Moves: each returns a new pattern stepping one axis from the value each event
+carries (or the voice's default), so they chain and compound; code::paint::
+recolours outright. Warmer and cooler step toward orange and blue the shorter way
+round, never past.
+code::
+~pad = \orange.brush("Cm7 G7").darker(0.3).paler;
+::
+## code::~a.darker(x) .lighter(x) .paler(x) .saturate(x) .warmer(x) .cooler(x) .paint(colour)::
+|| The same moves on a proxy: a pattern source is moved and reassigned (on the
+grid), a synth source has its code::hue::/code::sat::/code::val:: controls moved —
+a drone recipe that names them joins the register.
+code::
+~pad.cooler;  ~a.darker(0.2);
+::
+::
+
 SECTION:: Step notation anywhere
 
 definitionList::
@@ -472,6 +553,7 @@ hold become code::_::); the root is a setting.
 code::
 /syn/hit/<folder>        amp index         .hits and .chop
 /syn/note/<synthdef>     amp pitch dur     .deg (degree) and .chord (midinote), one per note
+/syn/paint/<tool>        amp pitch dur hue sat val   painted strokes, one per note: MIDI note, then the colour
 /syn/kr/<proxyKey>       value             native range, at `rate` Hz
 /syn/krn/<proxyKey>      value01           Spec-normalised, where a Spec is registered
 /syn/tempo               bpm
@@ -493,6 +575,9 @@ work immediately.
 ## strong::Effect recipes:: — code::Synesthesia.fxRecipes[\name] = (default: ...,
 ctl: \name_ctl, func: { |in, val| ... }):: makes code::~a.fx(\name, ...):: work
 immediately. Register a Spec for the control name.
+## strong::Tubes of paint:: — code::Paint.palette[\rust] = Paint.color(0.05, 0.8, 0.35):: makes
+code::\rust.brush(...):: work immediately; code::Paint.tools[\dab] = \kick:: rebinds
+a tool to any SynthDef that speaks code::hue::/code::sat::/code::val::.
 ::
 
 list::

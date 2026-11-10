@@ -160,6 +160,8 @@ change based on canvas state (no indices that shift when a proxy is removed).
 ```
 /syn/hit/<folder>        amp index         .hits and .chop
 /syn/note/<synthdef>     amp degree dur    .deg (degree) and .chord (midinote)
+/syn/paint/<tool>        amp pitch dur hue sat val   painted strokes (Paint, Nov 2026):
+                                           pitch as MIDI note, colour 0..1 each
 /syn/kr/<proxyKey>       value             native range
 /syn/krn/<proxyKey>      value01           Spec-normalized, optional stream
 /syn/tempo               bpm

@@ -56,3 +56,48 @@ code::
 ~sn = \s.hits(3, 8).jux(_.fast(2));
 ~m  = \ping.deg("0 3 5 7", 0.5).jux(_.slow(2), spread: 1);
 ::
+
+subsection:: Synesthesia painting moves
+
+Perceptual sculpt verbs from the painting register (link::Classes/Paint::). Each
+returns a strong::new:: pattern: a link::Classes/Pbindf:: that steps one colour
+axis from the value each event already carries — or, when the pattern never set
+it, from the voice's own default — so moves chain and compound. They work on any
+event pattern whose instrument speaks code::hue::/code::sat::/code::val::, not
+only on strokes from the tool words.
+
+METHOD:: darker
+METHOD:: lighter
+Step code::\val:: (light) down or up; clipped to 0..1.
+argument:: x
+the step (default 0.2).
+returns:: a new link::Classes/Pattern::
+
+METHOD:: paler
+METHOD:: saturate
+Step code::\sat:: (hue-identity strength) down toward grey, or up toward vivid;
+clipped to 0..1.
+argument:: x
+the step (default 0.2).
+returns:: a new link::Classes/Pattern::
+
+METHOD:: warmer
+METHOD:: cooler
+Step code::\hue:: toward the warm pole (orange, code::Paint.warmPole::) or the
+cool pole (blue, code::Paint.coolPole::), the shorter way round the wheel, never
+past the pole.
+argument:: x
+the step (default 0.1).
+returns:: a new link::Classes/Pattern::
+
+METHOD:: paint
+Recolour outright: the events now sample the given colour.
+argument:: color
+a colour (any form link::Classes/Paint#*color:: accepts).
+returns:: a new link::Classes/Pattern::
+discussion::
+code::
+~pad = \orange.brush("Cm7 G7").darker(0.3).paler;
+~m   = \blue.mark("0 3 5 7", 0.25).warmer(0.3);        // through magenta toward orange
+~k   = Pbind(\instrument, \mark, \degree, 0, \dur, 0.5).paint(\red);   // a raw Pbind, painted
+::
