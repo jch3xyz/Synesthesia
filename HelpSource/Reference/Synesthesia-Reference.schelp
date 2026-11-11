@@ -547,23 +547,23 @@ and code::hush::). Stem 0 is the main mix, always.
 
 subsection:: The OSC namespace
 
-Flat and stable, one value per address (a receiver with one channel per address
-names every value; a chord's notes do not overwrite each other); keys and names
-exactly as typed (characters an address cannot hold become code::_::); the root is
-a setting. code::count:: rises by one per event of a material — the trigger to
-watch; code::notes:: is the one multi-argument message (every note of a chord),
-code::size:: how many, code::pitch:: the lowest. Pitches are MIDI notes.
+Flat and stable, for a receiver with one channel per address sampled at frame rate:
+every value has its own address, so every channel is named by what it is, and every
+event and grid point is a emphasis::pulse:: — code::trig:: 1 on the onset, 0 after
+the pulse width — so a trigger fires on a rising edge. Keys and names exactly as
+typed (characters an address cannot hold become code::_::); the root is a setting.
+code::notes:: is the one multi-argument message: the MIDI notes lowest first in
+eight slots, 0 in the unused ones. code::dur:: is seconds to the voice's next event.
 
 code::
-/syn/hit/<folder>/amp | index | dur | count                      .hits and .chop
-/syn/note/<synthdef>/amp | pitch | notes… | size | dur | count   .deg and .chord
-/syn/note/<synthdef>/degree | degrees…                           .deg only: as written
-/syn/paint/<tool>/amp | pitch | notes… | size | dur | hue | sat | val | count   painted strokes
+/syn/hit/<folder>/trig | amp | index | dur          .hits and .chop
+/syn/note/<synthdef>/trig | amp | notes… | dur      .deg and .chord
+/syn/paint/<tool>/trig | amp | notes… | dur | hue | sat | val   painted strokes
 /syn/kr/<proxyKey>       value             native range, at `rate` Hz
 /syn/krn/<proxyKey>      value01           Spec-normalised, where a Spec is registered
 /syn/tempo               bpm
-/syn/bar                 phase01           within the bar
-/syn/half | quarter | eighth | sixteenth   phase01   within that note value, bar-aligned
+/syn/bar                 phase01           position in the bar
+/syn/half | quarter | eighth | sixteenth   pulse   on every boundary of that note value
 /syn/stems               key0 key1 ...     stem index -> proxy key, on change ("-" = free)
 /syn/gone/<proxyKey>                       proxy cleared or source nil, once
 /syn/alive               seconds           heartbeat, 1 Hz

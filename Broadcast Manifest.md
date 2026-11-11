@@ -154,33 +154,40 @@ played into the same proxy they share a stem. That is the correct behavior.
 
 ## OSC namespace
 
-Flat, stable, ONE VALUE PER ADDRESS (revised 2026-11-11 after first contact with
-TouchDesigner: a receiver that keeps one channel per address — an OSC In CHOP,
-Resolume, MadMapper — then shows every value under its own name, and a chord's
-notes do not overwrite each other). Addresses MUST NOT change based on canvas
-state (no indices that shift when a proxy is removed). `count` rises by one per
-event of that material, so a repeated hit with the same amp and index is still a
-change on the wire: the trigger to watch. `notes` is the one multi-argument
-message (notes1, notes2 … in a CHOP); `size` says how many of them are current.
+Flat and stable, designed for a receiver that keeps ONE CHANNEL PER ADDRESS and
+samples it at frame rate (a TouchDesigner OSC In CHOP, Resolume, MadMapper;
+revised 2026-11-11 after John's first look). Every value has its own address, so
+every channel is named by what it is. Every event and every grid point is a PULSE:
+a 1 on the onset, a 0 `pulse` seconds later (50 ms by default; half the gap when a
+voice's events come faster), so a trigger fires on a plain rising edge. Addresses
+MUST NOT change based on canvas state (no indices that shift when a proxy is
+removed).
 
 ```
-/syn/hit/<folder>/amp | index | dur | count                       .hits and .chop
-/syn/note/<synthdef>/amp | pitch | notes… | size | dur | count    .deg and .chord
-/syn/note/<synthdef>/degree | degrees…                            .deg only: as written
-/syn/paint/<tool>/amp | pitch | notes… | size | dur | hue | sat | val | count   Paint
+/syn/hit/<folder>/trig | amp | index | dur          .hits and .chop
+/syn/note/<synthdef>/trig | amp | notes… | dur      .deg and .chord
+/syn/paint/<tool>/trig | amp | notes… | dur | hue | sat | val   Paint
 /syn/kr/<proxyKey>       value             native range
 /syn/krn/<proxyKey>      value01           Spec-normalized, optional stream
 /syn/tempo               bpm
-/syn/bar                 phase01           within the bar, at the continuous rate
-/syn/half | quarter | eighth | sixteenth   phase01   within that note value, bar-aligned
+/syn/bar                 phase01           position in the bar, at the continuous rate
+/syn/half | quarter | eighth | sixteenth   pulse   on every boundary of that note value
 /syn/stems               key0 key1 ...     stem index -> proxy key, on change
 /syn/gone/<proxyKey>                       proxy cleared or source nil
 /syn/alive               seconds           heartbeat, 1 Hz
 ```
 
-`pitch` and `notes` are MIDI notes everywhere (a cloud's root as a MIDI note);
-`pitch` is the lowest note of a chord. `count` is sent last in an event's burst, so
-a receiver that fires on it finds the other values already in place.
+Events, grid pulses and the bar phase all land on the audible time: the language
+runs the server's latency ahead of the sound, and each of them allows for it. Two
+events on one address closer together than the pulse width (two voices on the same
+material, or a reassigned pattern crossfading with its old self) share one pulse:
+a receiver sampling at frame rate could not have told them apart anyway.
+`notes` is the one multi-argument message: the event's MIDI notes, lowest first, in
+eight slots with 0 in the unused ones — so notes1 is always the lowest note, a slot
+a chord does not use reads 0, and nothing stale survives a smaller chord. `dur` is
+seconds to this voice's next event (scale a decay or a fade to it without knowing
+the tempo). `trig` is sent last in an event's burst, so a receiver firing on it
+finds the other values already in place. A cloud's note is its root as a MIDI note.
 
 Keys are the ProxySpace keys as the performer typed them (`k`, `a`, `m`).
 Names in addresses are the Symbol as typed (`k`, `bplay`, `ping`). The
@@ -296,11 +303,14 @@ or settled something the text left open, it is recorded here.
 **Payload details settled (and revised 2026-11-11).** The first build sent one
 multi-argument message per note; TouchDesigner's OSC In CHOP showed that as
 `brush1 … brush6` with a chord's notes overwriting each other, and a repeated hit
-never moved a channel. Now every value has its own address, a chord is one `notes`
-message plus `size` and the lowest `pitch`, and `count` rises per event. `dur` is
-beats, not `sustain`. Address parts are sanitised (anything an OSC address cannot
-hold becomes `_`). `/syn/beat` became `/syn/bar`, with `half`, `quarter`, `eighth`
-and `sixteenth` phases beside it, all bar-aligned.
+never moved a channel. A first revision put every value on its own address with a
+rising `count`; John's second look settled it: a VJ wants a pulse, not a count, so
+`trig` is 1 on the onset and 0 after the pulse width; `pitch` and `size` went
+(sorted, zero-filled `notes` slots make them redundant), `degree`/`degrees` went (the
+VJ hears pitch, not notation), and `dur` became seconds. `/syn/beat` became the
+`/syn/bar` phase, with `half`, `quarter`, `eighth` and `sixteenth` pulses fired from
+the clock on the grid. Address parts are sanitised (anything an OSC address cannot
+hold becomes `_`).
 
 **Performance budget, as measured.** The per-event path allocates the message
 arrays and one scheduling thunk; the address strings are cached per material, so

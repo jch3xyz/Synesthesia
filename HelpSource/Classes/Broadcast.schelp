@@ -48,25 +48,27 @@ the Symbols as typed (code::k::, code::bplay::, code::ping::); characters that c
 appear in an OSC address become code::_::. The root is a setting, so two machines
 can coexist.
 
-An event arrives as a burst of messages under its family, code::count:: last:
-code::count:: rises by one per event of that material, so a repeated hit with the
-same amp and index is still a change on the wire — the trigger to watch — and a
-receiver that fires on it finds the event's other values already in place.
-code::notes:: is the one multi-argument message (every note of a chord at once:
-code::notes1::, code::notes2:: … in a CHOP); code::size:: says how many are current
-and code::pitch:: is the lowest. Pitches are MIDI notes everywhere.
+Every event and every grid point is a strong::pulse::: code::trig:: goes to 1 on
+the onset and back to 0 a pulse width later (50 ms by default, shorter for a voice
+whose events come faster — see link::#*start::'s code::pulse::), so a receiver
+samples a plain rising edge and a Trigger CHOP fires on it. An event's other
+values are sent first, so a receiver that fires on code::trig:: finds them in
+place. code::notes:: is the one multi-argument message: the event's MIDI notes,
+lowest first, in eight slots with 0 in the unused ones (code::notes1:: … code::notes8::
+in a CHOP) — so slot 1 is always the lowest note and nothing stale survives a
+smaller chord. code::dur:: is seconds to this voice's next event: scale a decay or
+a fade to it without knowing the tempo.
 
 table::
 ## strong::Address:: || strong::Value:: || strong::When::
-## code::/syn/hit/<folder>/amp:: code::/index:: code::/dur:: code::/count:: || amp (after accents), the sample variant or slice number, beats, the count || every code::hits:: hit and every code::chop:: slice
-## code::/syn/note/<synthdef>/amp:: code::/pitch:: code::/notes:: code::/size:: code::/dur:: code::/count:: || amp, the lowest MIDI note, every MIDI note (one message), how many, beats, the count || every code::deg:: and code::chord:: event
-## code::/syn/note/<synthdef>/degree:: code::/degrees:: || the lowest degree as written, every degree (one message) || code::deg:: only
-## code::/syn/paint/<tool>/amp:: code::/pitch:: code::/notes:: code::/size:: code::/dur:: code::/hue:: code::/sat:: code::/val:: code::/count:: || as a note, plus the stroke's colour, 0..1 each — its timbre coordinates are its screen colour || every painted stroke (link::Classes/Paint::: code::brush::, code::mark::, code::dab::, code::drip::, code::spray::, code::wash::); a cloud's pitch is its root as a MIDI note
+## code::/syn/hit/<folder>/trig:: code::/amp:: code::/index:: code::/dur:: || the pulse; amp (after accents); the sample variant or slice number; seconds to the next hit || every code::hits:: hit and every code::chop:: slice
+## code::/syn/note/<synthdef>/trig:: code::/amp:: code::/notes:: code::/dur:: || the pulse; amp; the MIDI notes lowest first in eight slots; seconds to the next event || every code::deg:: and code::chord:: event
+## code::/syn/paint/<tool>/trig:: code::/amp:: code::/notes:: code::/dur:: code::/hue:: code::/sat:: code::/val:: || as a note, plus the stroke's colour, 0..1 each — its timbre coordinates are its screen colour || every painted stroke (link::Classes/Paint::: code::brush::, code::mark::, code::dab::, code::drip::, code::spray::, code::wash::); a cloud's note is its root as a MIDI note
 ## code::/syn/kr/<proxyKey>:: || value || each control-rate proxy, at the continuous rate, in its native range
 ## code::/syn/krn/<proxyKey>:: || value01 || the same, normalised 0..1 through the link::Classes/Spec:: registered under the proxy's key (where there is one)
 ## code::/syn/tempo:: || bpm || at the continuous rate
-## code::/syn/bar:: || phase01 || within the bar, at the continuous rate
-## code::/syn/half:: code::/quarter:: code::/eighth:: code::/sixteenth:: || phase01 || within that note value, aligned to the bar, at the continuous rate (link::#*phases::)
+## code::/syn/bar:: || phase01 || position in the bar, at the continuous rate
+## code::/syn/half:: code::/quarter:: code::/eighth:: code::/sixteenth:: || pulse || on every boundary of that note value, from the clock, aligned to the bar (link::#*phases::)
 ## code::/syn/stems:: || key0, key1, … || the stem table, on every change; code::main:: is always first, code::-:: marks a free slot
 ## code::/syn/gone/<proxyKey>:: || — || once, when a proxy is cleared or its source set to nil
 ## code::/syn/alive:: || seconds || heartbeat, once a second
@@ -208,6 +210,13 @@ argument:: timetags
 Send events as OSC bundles with timetags, immediately, instead of scheduling the
 send onto the onset (default false — assume the receiver ignores timetags until
 you have tested it).
+argument:: pulse
+How long a code::trig:: or grid pulse stays at 1, in seconds (default 0.05 —
+three frames at 60 fps). A voice whose events come faster than that gets pulses of
+half its gap instead, so every event still has a falling edge before the next
+(link::#*pulseWidth::). Two events on one address closer than the width — two
+voices on the same material, or a reassigned pattern crossfading with its old
+self — share one pulse.
 returns:: this
 discussion::
 code::
@@ -277,22 +286,23 @@ code::hush:: asks this.
 
 METHOD:: eventMessages
 The messages one Event produces, as code::[[address, arg, arg, …], …]::, or
-code::nil:: for a rest or an Event that did not come from a brush. Reads the
-brush tags, code::\amp::, code::\dur::, and the pitch (code::\degree:: for
-code::deg::, the Event's own code::~midinote:: for code::chord::).
+code::nil:: for a rest or an Event that did not come from a brush: one value per
+address, the code::trig::'s 1 last. Reads the brush tags, code::\amp::,
+code::\dur::, the pitches (the Event's own code::~midinote::, or code::~freq:: for a
+painted cloud) and, for a stroke, code::\hue:: code::\sat:: code::\val::. Pure;
+the trig's 0 is the running hook's job.
 argument:: ev
 argument:: root
 defaults to the running root, else code::"/syn"::
-argument:: count
-the event's count under its family (nil leaves the count message out). The running
-hook keeps it per family with link::#*nextCount::.
+argument:: beatDur
+seconds per beat, to put code::dur:: on the wire in seconds (default 1).
 discussion::
 code::
-Broadcast.eventMessages(Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4, syn_index: 2, dur: 0.5)), "/syn", 7);
-// -> [ [ /syn/hit/k/amp, 1.4 ], [ /syn/hit/k/index, 2 ], [ /syn/hit/k/dur, 0.5 ], [ /syn/hit/k/count, 7 ] ]
-Broadcast.eventMessages(Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2, note: [0, 3, 7], octave: 5, dur: 4)), "/syn", 1);
-// -> [ [ /syn/note/pad/amp, 0.2 ], [ /syn/note/pad/pitch, 60.0 ], [ /syn/note/pad/notes, 60.0, 63.0, 67.0 ],
-//      [ /syn/note/pad/size, 3 ], [ /syn/note/pad/dur, 4 ], [ /syn/note/pad/count, 1 ] ]
+Broadcast.eventMessages(Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4, syn_index: 2, dur: 0.5)), "/syn", 0.5);
+// -> [ [ /syn/hit/k/amp, 1.4 ], [ /syn/hit/k/index, 2 ], [ /syn/hit/k/dur, 0.25 ], [ /syn/hit/k/trig, 1 ] ]
+Broadcast.eventMessages(Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2, note: [0, 3, 7], octave: 5, dur: 4)), "/syn", 0.5);
+// -> [ [ /syn/note/pad/amp, 0.2 ], [ /syn/note/pad/notes, 60.0, 63.0, 67.0, 0, 0, 0, 0, 0 ],
+//      [ /syn/note/pad/dur, 2.0 ], [ /syn/note/pad/trig, 1 ] ]
 ::
 
 METHOD:: eventBase
@@ -300,24 +310,48 @@ The address family an event's messages hang under — code::"/syn/hit/k"::,
 code::"/syn/note/ping"::, code::"/syn/paint/brush"::, or nil for an event no brush
 made.
 
-METHOD:: nextCount
-The next count for an address family: 1, 2, 3 … wrapping at a million. Counts
-start again at every link::#*start::.
+METHOD:: noteSlotsFor
+The code::notes:: message's values for some pitches: lowest first, in
+link::#*noteSlots:: slots with 0 in the unused ones; a chord wider than that keeps
+its lowest notes. Pure.
+
+METHOD:: noteSlots
+How many slots code::notes:: always carries (8).
+
+METHOD:: pulseWidth
+How long a pulse stays up: the pulse width, or half the gap to the voice's next
+event when that is shorter, never under 2 ms. Pure.
+argument:: gapSeconds
+seconds to the next event (nil: unknown).
+argument:: width
+the pulse width (default: the running one, else 0.05).
 
 METHOD:: phases
-The note values the phase stream counts, as code::name -> beats::: code::half::
-(2), code::quarter:: (1), code::eighth:: (0.5), code::sixteenth:: (0.25). Each goes
-out as code::/syn/<name>::, a 0..1 phase within that note value, aligned to the
-bar, beside code::/syn/bar::.
+The note values the grid pulses mark, as code::name -> beats::: code::half:: (2),
+code::quarter:: (1), code::eighth:: (0.5), code::sixteenth:: (0.25). Each pulses
+on code::/syn/<name>:: — 1 on every boundary of that note value, 0 a pulse width
+later — beside the code::/syn/bar:: phase.
 
-METHOD:: phaseValues
-The phases for a position in the bar: code::[bar, half, quarter, eighth, sixteenth]::,
-each 0..1. Pure.
+METHOD:: barPhase
+The code::/syn/bar:: phase, 0..1, for a position in the bar — read strong::aheadBeats::
+earlier than the clock says, because the language runs the server's latency ahead
+of the sound. Events, grid pulses and the bar phase all land on the audible time.
+Pure.
 argument:: beatInBar
 argument:: beatsPerBar
+argument:: aheadBeats
+the server's latency, in beats (default 0).
+
+METHOD:: pulsesAt
+Which grid pulses fire at a position in the bar: the names in link::#*phases::
+whose boundary falls there. Pure. The running pulser sends them the server's
+latency late, so a pulse lands on the audible beat, as events do.
+argument:: beatInBar
 discussion::
 code::
-Broadcast.phaseValues(1.5, 4);   // -> [ 0.375, 0.75, 0.5, 0.0, 0.0 ]
+Broadcast.pulsesAt(0);      // -> [ half, quarter, eighth, sixteenth ]
+Broadcast.pulsesAt(1.5);    // -> [ eighth, sixteenth ]
+Broadcast.pulsesAt(0.25);   // -> [ sixteenth ]
 ::
 
 METHOD:: krKeysOf
@@ -364,10 +398,10 @@ bpm(120); grid(4);
 ~a = \tone.stack(~r, [1, 2, 4]);
 ~a.fade(6).play;                           // -> /syn/stems main a ; audio on channels 4-5
 ~k = \k.hits("x..x..x.");
-~k.play;                                   // -> /syn/hit/k/amp 1.0, /index 0, /dur 0.25, /count 1, 2, 3 … ; stems main a k
+~k.play;                                   // -> /syn/hit/k/trig 1 then 0 on every kick, with /amp 1.0, /index 0, /dur 0.125 ; stems main a k
 ~a.fx(\lpf, pad(\x).mapExp(200, 8000));    // -> /syn/kr/syn_sig1 (Hz) and /syn/krn/syn_sig1 (0..1)
 ~m = \ping.deg("0 3 5 [0 2 4]", 0.5);
-~m.play;                                   // -> /syn/note/ping/pitch 60, /notes 60 64 67 for the chord, /degrees 0 2 4, /count …
+~m.play;                                   // -> /syn/note/ping/trig per event, /notes 60 0 0 0 0 0 0 0 … and 60 64 67 0 0 0 0 0 for the chord
 hush(15);                                  // stems fade over 15 s, events stop, table unchanged
 Broadcast.status;
 Broadcast.stop;

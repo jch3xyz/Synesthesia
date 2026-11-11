@@ -56,59 +56,52 @@ TestBroadcast : UnitTest {
 	test_payload_hits {
 		var ev = Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4,
 			syn_index: 2, dur: 0.5));
-		var msgs = Broadcast.eventMessages(ev, "/syn", 7);
+		var msgs = Broadcast.eventMessages(ev, "/syn", 0.5);   // beatDur 0.5: 120 bpm
 		this.assertEquals(msgs, [
 			["/syn/hit/k/amp", 1.4],
 			["/syn/hit/k/index", 2],
-			["/syn/hit/k/dur", 0.5],
-			["/syn/hit/k/count", 7]
-		], "hits: amp (post-accent), the sample variant, dur, then the count");
-		this.assertEquals(Broadcast.eventMessages(ev, "/syn").size, 3, "no count when none is given");
+			["/syn/hit/k/dur", 0.25],
+			["/syn/hit/k/trig", 1]
+		], "hits: amp (post-accent), the sample variant, dur in seconds, then the trig's 1");
 	}
 
 	test_payload_chop {
 		var ev = Event.default.putAll((syn_brush: \chop, syn_material: \amen, amp: 0.5,
 			slice: 3, syn_index: 3, dur: 0.25));
-		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn", 1));
+		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn"));
 		this.assertEquals(m["/syn/hit/amen/index"], [3], "chop: the break is the material, the slice is the index");
-		this.assertEquals(m["/syn/hit/amen/count"], [1], "counted like a hit");
+		this.assertEquals(m["/syn/hit/amen/trig"], [1], "pulsed like a hit");
 	}
 
 	test_payload_deg {
 		var ev = Event.default.putAll((syn_brush: \deg, syn_material: \ping, amp: 0.3,
 			degree: 3, dur: 0.5));
-		var msgs = Broadcast.eventMessages(ev, "/syn", 2);
+		var msgs = Broadcast.eventMessages(ev, "/syn", 0.5);
 		var m = this.byAddress(msgs);
+		this.assertEquals(msgs.collect(_[0]), ["/syn/note/ping/amp", "/syn/note/ping/notes",
+			"/syn/note/ping/dur", "/syn/note/ping/trig"], "a note: amp, notes, dur, trig — nothing else");
 		this.assertEquals(m["/syn/note/ping/amp"], [0.3], "amp");
-		this.assertEquals(m["/syn/note/ping/pitch"], [65], "pitch is the MIDI note (degree 3 of the default major scale)");
-		this.assertEquals(m["/syn/note/ping/notes"], [65], "notes: every note, here one");
-		this.assertEquals(m["/syn/note/ping/size"], [1], "size");
-		this.assertEquals(m["/syn/note/ping/degree"], [3], "degree: what was written");
-		this.assertEquals(m["/syn/note/ping/degrees"], [3], "degrees");
-		this.assertEquals(m["/syn/note/ping/dur"], [0.5], "dur in beats");
-		this.assertEquals(msgs.last, ["/syn/note/ping/count", 2], "count comes last");
+		this.assertEquals(m["/syn/note/ping/notes"], [65, 0, 0, 0, 0, 0, 0, 0],
+			"notes: the MIDI note (degree 3 of the default major scale) in slot 1, the other slots 0");
+		this.assertEquals(m["/syn/note/ping/dur"], [0.25], "dur in seconds");
+		this.assertEquals(msgs.last, ["/syn/note/ping/trig", 1], "the trig's 1 comes last");
 	}
 
 	test_payload_degChord {
 		var ev = Event.default.putAll((syn_brush: \deg, syn_material: \ping, amp: 0.3,
-			degree: [0, 2, 4], dur: 1));
-		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn", 1));
-		this.assertEquals(m["/syn/note/ping/notes"], [60, 64, 67], "a bracket chord: all its MIDI notes in one message");
-		this.assertEquals(m["/syn/note/ping/pitch"], [60], "pitch is the lowest");
-		this.assertEquals(m["/syn/note/ping/size"], [3], "three notes");
-		this.assertEquals(m["/syn/note/ping/degrees"], [0, 2, 4], "and the degrees as written");
-		this.assertEquals(m["/syn/note/ping/degree"], [0], "the lowest degree");
+			degree: [4, 0, 2], dur: 1));
+		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn"));
+		this.assertEquals(m["/syn/note/ping/notes"], [60, 64, 67, 0, 0, 0, 0, 0],
+			"a bracket chord: its MIDI notes lowest first, whatever order it was written in");
 	}
 
 	test_payload_chord {
-		// what ChordSymbol2 leaves in \note once a chord symbol has streamed: note numbers
+		// what the chord name became in \note: note numbers
 		var ev = Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2,
 			note: [0, 3, 7], octave: 5, dur: 4));
-		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn", 1));
-		this.assertEquals(m["/syn/note/pad/notes"], [60.0, 63.0, 67.0], "chord: the MIDI notes, by the Event's own pitch chain");
-		this.assertEquals(m["/syn/note/pad/pitch"], [60.0], "pitch is the lowest");
-		this.assertEquals(m["/syn/note/pad/size"], [3], "size");
-		this.assert(m["/syn/note/pad/degree"].isNil, "a chord has no degree message");
+		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn"));
+		this.assertEquals(m["/syn/note/pad/notes"], [60.0, 63.0, 67.0, 0, 0, 0, 0, 0],
+			"chord: the MIDI notes, by the Event's own pitch chain, lowest first");
 	}
 
 	test_payload_restsAndStrangers {
@@ -125,27 +118,37 @@ TestBroadcast : UnitTest {
 			"the root travels into every event address");
 	}
 
-	test_counts {
-		var a = Broadcast.nextCount("/syn/hit/test_a");
-		var b = Broadcast.nextCount("/syn/hit/test_a");
-		var c = Broadcast.nextCount("/syn/hit/test_b");
-		this.assertEquals(b, a + 1, "each event of a material counts up by one");
-		this.assertEquals(c, 1, "another material counts on its own");
+	test_noteSlotsFor {
+		this.assertEquals(Broadcast.noteSlotsFor([67, 60, 64]), [60, 64, 67, 0, 0, 0, 0, 0], "sorted, padded with 0");
+		this.assertEquals(Broadcast.noteSlotsFor(72), [72, 0, 0, 0, 0, 0, 0, 0], "a single note");
+		this.assertEquals(Broadcast.noteSlotsFor((60..70)), (60..67), "a chord wider than the slots keeps its lowest");
 	}
 
-	// ----- the phase streams -----------------------------------------------
+	// ----- pulses ----------------------------------------------------------
 
-	test_phaseValues {
-		var v = Broadcast.phaseValues(1.5, 4);
+	test_pulseWidth {
+		this.assertEquals(Broadcast.pulseWidth(nil, 0.05), 0.05, "no gap known: the pulse width");
+		this.assertEquals(Broadcast.pulseWidth(1, 0.05), 0.05, "a slow voice: the pulse width");
+		this.assertEquals(Broadcast.pulseWidth(0.04, 0.05), 0.02, "a fast voice: half the gap, so each event still falls");
+		this.assertEquals(Broadcast.pulseWidth(0.001, 0.05), 0.002, "never under 2 ms");
+	}
+
+	test_barPhase {
+		this.assertFloatEquals(Broadcast.barPhase(1, 4), 0.25, "beat 2 of 4", 1e-9);
+		this.assertFloatEquals(Broadcast.barPhase(0.2, 4, 0.4), 0.95, "the clock is 0.4 beats ahead of the sound: still the end of the last bar", 1e-9);
+		this.assertFloatEquals(Broadcast.barPhase(3.9, 4, 0.4), 0.875, "and 3.9 is heard as 3.5", 1e-9);
+	}
+
+	test_pulsesAt {
 		this.assertEquals(Broadcast.phases.collect(_.key), [\half, \quarter, \eighth, \sixteenth], "the note values");
-		this.assertFloatEquals(v[0], 0.375, "bar: 1.5 of 4 beats", 1e-9);
-		this.assertFloatEquals(v[1], 0.75, "half: 1.5 of 2 beats", 1e-9);
-		this.assertFloatEquals(v[2], 0.5, "quarter: the fraction of the beat", 1e-9);
-		this.assertFloatEquals(v[3], 0, "eighth: 1.5 beats is exactly three eighths", 1e-9);
-		this.assertFloatEquals(v[4], 0, "sixteenth: and six sixteenths", 1e-9);
-		v = Broadcast.phaseValues(3.9, 4);
-		this.assert(v.every { |x| x.inclusivelyBetween(0, 1) }, "all phases are 0..1");
-		this.assertFloatEquals(v[4], 0.6, "sixteenth at beat 3.9: 15.6 sixteenths in", 1e-9);
+		this.assertEquals(Broadcast.pulsesAt(0), [\half, \quarter, \eighth, \sixteenth], "the downbeat fires all four");
+		this.assertEquals(Broadcast.pulsesAt(2), [\half, \quarter, \eighth, \sixteenth], "so does beat 3 of 4");
+		this.assertEquals(Broadcast.pulsesAt(1), [\quarter, \eighth, \sixteenth], "beat 2: not the half");
+		this.assertEquals(Broadcast.pulsesAt(1.5), [\eighth, \sixteenth], "an off-beat eighth");
+		this.assertEquals(Broadcast.pulsesAt(0.25), [\sixteenth], "a sixteenth alone");
+		this.assertEquals(Broadcast.pulsesAt(2.75), [\sixteenth], "the last sixteenth of beat 3");
+		this.assertEquals(Broadcast.pulsesAt(0.1), [], "between the grid: nothing");
+		this.assertEquals(Broadcast.pulsesAt(0.9999999), [\quarter, \eighth, \sixteenth], "a hair early still counts as the beat");
 	}
 
 	// ----- the brushes carry the tags --------------------------------------
@@ -186,8 +189,8 @@ TestBroadcast : UnitTest {
 		ev = chord.asStream.next(Event.default);
 		this.assertEquals([ev[\syn_brush], ev[\syn_material]], [\chord, \pad], "chord tags the SynthDef");
 		this.assert(ev[\note].isArray, "the chord name became note numbers");
-		this.assertEquals(this.byAddress(Broadcast.eventMessages(ev, "/syn"))["/syn/note/pad/notes"].size, 4,
-			"a four-note chord is one notes message with four notes");
+		this.assertEquals(this.byAddress(Broadcast.eventMessages(ev, "/syn"))["/syn/note/pad/notes"].count(_ > 0), 4,
+			"a four-note chord is one notes message with four notes in its slots");
 	}
 
 	// ----- stem index stability --------------------------------------------
@@ -278,24 +281,22 @@ TestBroadcast : UnitTest {
 
 	test_payload_paint {
 		var ev = \orange.brush("Cm7").asStream.next(Event.default);
-		var msgs = Broadcast.eventMessages(ev, "/syn", 3);
+		var msgs = Broadcast.eventMessages(ev, "/syn", 0.5);
 		var m = this.byAddress(msgs);
 		this.assertEquals(msgs.collect(_[0]), [
-			"/syn/paint/brush/amp", "/syn/paint/brush/pitch", "/syn/paint/brush/notes",
-			"/syn/paint/brush/size", "/syn/paint/brush/dur", "/syn/paint/brush/hue",
-			"/syn/paint/brush/sat", "/syn/paint/brush/val", "/syn/paint/brush/count"
-		], "a stroke: every value under its own name, count last");
-		this.assertEquals(m["/syn/paint/brush/notes"].size, 4, "all four notes of the chord in one message");
-		this.assertFloatEquals(m["/syn/paint/brush/pitch"][0], 60, "pitch is the lowest MIDI note", 1e-6);
-		this.assertEquals(m["/syn/paint/brush/size"], [4], "size");
-		this.assertEquals(m["/syn/paint/brush/dur"], [4], "dur");
+			"/syn/paint/brush/amp", "/syn/paint/brush/notes", "/syn/paint/brush/dur",
+			"/syn/paint/brush/hue", "/syn/paint/brush/sat", "/syn/paint/brush/val", "/syn/paint/brush/trig"
+		], "a stroke: every value under its own name, the trig last");
+		this.assertEquals(m["/syn/paint/brush/notes"].count(_ > 0), 4, "all four notes of the chord in the slots");
+		this.assertFloatEquals(m["/syn/paint/brush/notes"][0], 60, "slot 1 is the lowest MIDI note", 1e-6);
+		this.assertEquals(m["/syn/paint/brush/dur"], [2], "dur: 4 beats at 120 bpm is 2 seconds");
 		this.assert((m["/syn/paint/brush/hue"][0] - 0.08).abs <= 0.03, "hue is the tube's, within its spread");
 		this.assert(m["/syn/paint/brush/sat"][0].inclusivelyBetween(0, 1)
 			and: { m["/syn/paint/brush/val"][0].inclusivelyBetween(0, 1) }, "sat and val ride along");
 		ev = \grey.wash(55).asStream.next(Event.default);
-		m = this.byAddress(Broadcast.eventMessages(ev, "/syn", 1));
-		this.assertFloatEquals(m["/syn/paint/wash/pitch"][0], 55.cpsmidi, "a cloud's pitch is its root, as a MIDI note", 1e-6);
-		this.assertEquals(m["/syn/paint/wash/dur"], [16], "dur");
+		m = this.byAddress(Broadcast.eventMessages(ev, "/syn"));
+		this.assertFloatEquals(m["/syn/paint/wash/notes"][0], 55.cpsmidi, "a cloud's note is its root, as a MIDI note", 1e-6);
+		this.assertEquals(m["/syn/paint/wash/dur"], [16], "dur, at one second a beat");
 		ev = \red.dab.asStream.next(Event.default);
 		this.assertEquals(Broadcast.eventMessages(ev, "/syn")[0][0], "/syn/paint/dab/amp", "dab is its own tool on the wire");
 	}

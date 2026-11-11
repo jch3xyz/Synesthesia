@@ -21,27 +21,28 @@
 //               the main mix always on stem 0 — an aggregate device (interface +
 //               BlackHole) hands those channels to SonoBus or JackTrip
 //
-// The OSC namespace (the root is a setting; "/syn" is the default). ONE VALUE PER
-// ADDRESS: receivers that keep one channel per address (TouchDesigner's OSC In
-// CHOP, Resolume, MadMapper) then show every value under its own name, and a
-// chord's notes do not overwrite each other. `count` goes up by one on every event
-// of that material, so a repeated hit with the same amp and index is still a change
-// on the wire — the trigger a receiver can watch. `notes` is the one multi-argument
-// message: every note of a chord at once (notes1, notes2 … in a CHOP), `size` says
-// how many are current, `pitch` is the lowest.
-//   /syn/hit/<folder>/amp | index | dur | count          .hits and .chop
-//   /syn/note/<synthdef>/amp | pitch | notes… | size | dur | count     .deg and .chord
-//   /syn/note/<synthdef>/degree | degrees…                .deg only: what was written
-//   /syn/paint/<tool>/amp | pitch | notes… | size | dur | hue | sat | val | count
+// The OSC namespace (the root is a setting; "/syn" is the default). Designed for a
+// receiver that keeps ONE CHANNEL PER ADDRESS and samples it at frame rate
+// (TouchDesigner's OSC In CHOP, Resolume, MadMapper): every value has its own
+// address, so every channel is named by what it is, and every event and every grid
+// point is a PULSE — a 1 on the onset and a 0 `pulse` seconds later (shorter when
+// events come faster) — so a trigger fires on a plain rising edge.
+//   /syn/hit/<folder>/trig | amp | index | dur          .hits and .chop
+//   /syn/note/<synthdef>/trig | amp | notes… | dur      .deg and .chord
+//   /syn/paint/<tool>/trig | amp | notes… | dur | hue | sat | val
 //   /syn/kr/<proxyKey>     value              native range
 //   /syn/krn/<proxyKey>    value01            Spec-normalised, where a Spec is registered
 //   /syn/tempo             bpm
-//   /syn/bar | half | quarter | eighth | sixteenth   phase01 within that note value,
-//                                             aligned to the bar, at the continuous rate
+//   /syn/bar               phase01            position in the bar, at the continuous rate
+//   /syn/half | quarter | eighth | sixteenth  pulse       on every boundary of that note value
 //   /syn/stems             key0 key1 ...      stem index -> proxy key, on every change
 //   /syn/gone/<proxyKey>                      proxy cleared or source set to nil
 //   /syn/alive             seconds            heartbeat, 1 Hz
-// pitch and notes are MIDI notes everywhere (a cloud's root as a MIDI note).
+// `notes` is the one multi-argument message: the event's MIDI notes, lowest first,
+// in `noteSlots` (8) slots with 0 in the unused ones — notes1 is always the lowest
+// note and a slot a chord does not use reads 0. `dur` is seconds to this voice's next
+// event. `trig` is sent last in a burst, so a receiver firing on it finds the
+// event's other values already in place.
 //
 // NEVER BREAKS THE MUSIC. A wrong IP, an absent receiver, a missing aggregate device,
 // too few output channels, SonoBus not running: the canvas sounds identical and the
@@ -87,16 +88,17 @@
 
 Broadcast {
 	classvar <>prefix = "syn_bc_";      // every proxy Broadcast makes starts with this
-	classvar <addr, <root, <rate, <stemOut, <maxStems, <krn, <timetags;
+	classvar <addr, <root, <rate, <stemOut, <maxStems, <krn, <timetags, <pulse;
 	classvar <events = false, <kr = false, <stems = false;
 	classvar <running = false, <warnings, space, startedAt;
 	// events
-	classvar origPlay, hooked = false, counts;
+	classvar origPlay, hooked = false, pulseTokens;
 	// continuous
 	classvar <krKeys, krGen = 0, krGens, krAddrs, krnAddrs, krResponder, krWalker;
-	classvar tempoAddr, phaseAddrs, stemsAddr, aliveAddr;
-	// the note values the phase stream counts, in quarter-note beats
-	classvar <phases;
+	classvar tempoAddr, barAddr, pulseAddrs, stemsAddr, aliveAddr, gridPulser;
+	// the note values the grid pulses mark, in quarter-note beats, and how many
+	// note slots an event's `notes` message always carries
+	classvar <phases, <noteSlots = 8;
 	// stems
 	classvar <stemTable, stemGains, stemWalker, heartbeat, mainSynth, mainDef, mainPending = false;
 	classvar hushLag, hushLagUntil;
@@ -114,8 +116,10 @@ Broadcast {
 	// ----- the setup-time surface -------------------------------------------
 
 	// addr: a NetAddr, or "host" / "host:port" (port defaults to 9000)
+	// pulse: how long a trig or grid pulse stays at 1, in seconds (shortened to half
+	// the gap when events of one voice come faster than that)
 	*start { |addr, events = true, kr = true, stems = true, rate = 30, stemOut = 2,
-		maxStems = 8, root = "/syn", krn = true, timetags = false|
+		maxStems = 8, root = "/syn", krn = true, timetags = false, pulse = 0.05|
 		var target = this.resolveAddr(addr);
 		if(running) { this.stop };
 		warnings.clear;
@@ -127,7 +131,7 @@ Broadcast {
 			^this
 		};
 		// (the arguments shadow the classvars of the same name, hence the hand-off)
-		this.prConfigure(target, events, kr, stems, rate, stemOut, maxStems, root, krn, timetags);
+		this.prConfigure(target, events, kr, stems, rate, stemOut, maxStems, root, krn, timetags, pulse);
 		running = true;
 		startedAt = Main.elapsedTime;
 		if(this.events) { this.prStartEvents };
@@ -139,7 +143,7 @@ Broadcast {
 		^this
 	}
 
-	*prConfigure { |target, ev, cont, st, hz, out, cap, ns, norm, tt|
+	*prConfigure { |target, ev, cont, st, hz, out, cap, ns, norm, tt, width|
 		addr = target;
 		root = ns.asString;
 		rate = hz.clip(1, 200);
@@ -147,14 +151,17 @@ Broadcast {
 		maxStems = cap.asInteger.max(0);
 		krn = norm;
 		timetags = tt;
+		pulse = width.clip(0.005, 2);
 		events = ev;
 		kr = cont;
 		stems = st;
 		tempoAddr = this.address(root, "tempo");
-		phaseAddrs = ([\bar] ++ phases.collect(_.key)).collect { |name| this.address(root, name) };
+		barAddr = this.address(root, "bar");
+		pulseAddrs = IdentityDictionary.new;
+		phases.do { |assoc| pulseAddrs[assoc.key] = this.address(root, assoc.key) };
 		stemsAddr = this.address(root, "stems");
 		aliveAddr = this.address(root, "alive");
-		counts = Dictionary.new;
+		pulseTokens = Dictionary.new;
 		krAddrs = IdentityDictionary.new;
 		krnAddrs = IdentityDictionary.new;
 	}
@@ -166,10 +173,11 @@ Broadcast {
 			hooked = false;
 		};
 		krWalker !? { krWalker.stop };
+		gridPulser !? { gridPulser.stop };
 		stemWalker !? { stemWalker.stop };
 		heartbeat !? { heartbeat.stop };
 		krResponder !? { krResponder.free };
-		krWalker = stemWalker = heartbeat = krResponder = nil;
+		krWalker = gridPulser = stemWalker = heartbeat = krResponder = nil;
 		mainSynth !? { if(mainSynth.server.serverRunning) { mainSynth.free } };
 		mainSynth = nil;
 		mainPending = false;
@@ -263,18 +271,16 @@ Broadcast {
 	}
 
 	// The messages one event produces, as [[address, arg, arg...], ...], or nil for a
-	// rest or an event that did not come from a brush. Pure: no server, no state; the
-	// count is passed in (prOnEvent keeps it) and left out when nil. One value per
-	// address (see the header); `count` goes last, so a receiver that fires on it
-	// finds the event's other values already in place.
-	//   hits/chop     amp, index (the sample picked, or the slice), dur, count
-	//   deg / chord   amp, pitch (lowest MIDI note), notes (all, one message), size,
-	//                 dur, count — and for deg, degree and degrees as written
+	// rest or an event that did not come from a brush. Pure: no server, no state. One
+	// value per address (see the header), the trig's 1 last; the matching 0 is the
+	// sender's job (prOnEvent). beatDur turns the event's dur in beats into seconds.
+	//   hits/chop     amp, index (the sample picked, or the slice), dur, trig
+	//   deg / chord   amp, notes (MIDI notes, lowest first, noteSlots wide), dur, trig
 	//   paint tools   as deg/chord, plus hue, sat, val: the stroke's colour
-	*eventMessages { |ev, root, count|
+	*eventMessages { |ev, root, beatDur = 1|
 		var brush = ev[\syn_brush];
 		var base = this.eventBase(ev, root);
-		var amp, dur, pitches, degrees, msgs;
+		var amp, dur, pitches, msgs;
 		base ?? { ^nil };
 		if(ev.isRest) { ^nil };
 		amp = ev.use { ~amp.value } ? 0;
@@ -289,40 +295,44 @@ Broadcast {
 			} {
 				ev.use { ~midinote.value }.asArray
 			};
-			msgs = msgs ++ [
-				[base ++ "/pitch", pitches.minItem],
-				[base ++ "/notes"] ++ pitches,
-				[base ++ "/size", pitches.size]
-			];
-			if(brush == \deg) {
-				degrees = ev[\degree].asArray;
-				msgs = msgs ++ [[base ++ "/degree", degrees.minItem], [base ++ "/degrees"] ++ degrees];
-			};
+			msgs = msgs.add([base ++ "/notes"] ++ this.noteSlotsFor(pitches));
 		};
-		msgs = msgs.add([base ++ "/dur", dur]);
+		msgs = msgs.add([base ++ "/dur", dur * beatDur]);
 		if(Paint.tools.includesKey(brush)) {
 			msgs = msgs ++ [[base ++ "/hue", ev[\hue] ? 0], [base ++ "/sat", ev[\sat] ? 0],
 				[base ++ "/val", ev[\val] ? 0]];
 		};
-		count !? { msgs = msgs.add([base ++ "/count", count]) };
-		^msgs
+		^msgs.add([base ++ "/trig", 1])
 	}
 
-	// the next count for an address family: 1, 2, 3 … wrapping at a million
-	*nextCount { |base|
-		var n;
-		counts ?? { counts = Dictionary.new };
-		n = (counts[base] ? 0) + 1;
-		if(n > 1000000) { n = 1 };
-		counts[base] = n;
-		^n
+	// the notes message's values: the pitches lowest first, in noteSlots slots, 0 in
+	// the unused ones (a chord wider than that keeps its lowest notes)
+	*noteSlotsFor { |pitches|
+		^pitches.asArray.sort.keep(noteSlots).extend(noteSlots, 0)
 	}
 
-	// the phase streams: [address, phase01] for the bar and each note value in
-	// `phases`, all aligned to the bar. Pure, so the alignment is unit-tested:
-	// beatInBar 1.5 of 4 -> bar 0.375, half 0.75, quarter 0.5, eighth 0, sixteenth 0.
-	*phaseValues { |beatInBar, beatsPerBar = 4|
-		^[beatInBar / beatsPerBar] ++ phases.collect { |assoc| (beatInBar / assoc.value).frac }
+	// how long a pulse stays up: the pulse width, or half the gap to this voice's
+	// next event when that is shorter, so every event still has a falling edge
+	// before the next one (and never under 2 ms)
+	*pulseWidth { |gapSeconds, width|
+		width = width ? pulse ? 0.05;
+		gapSeconds ?? { ^width };
+		^min(width, gapSeconds * 0.5).max(0.002)
+	}
+
+	// the bar phase, 0..1, `aheadBeats` earlier than the clock's position (the
+	// clock runs the server's latency ahead of the sound). Pure.
+	*barPhase { |beatInBar, beatsPerBar = 4, aheadBeats = 0|
+		^((beatInBar - aheadBeats) % beatsPerBar) / beatsPerBar
+	}
+
+	// which grid pulses fire at a position in the bar: every note value in `phases`
+	// whose boundary falls here (to a 16th of a 16th). Pure, so the alignment is
+	// unit-tested: beat 0 -> all four; 1.5 -> eighth and sixteenth; 2 -> half,
+	// quarter, eighth, sixteenth; 0.25 -> sixteenth alone.
+	*pulsesAt { |beatInBar|
+		^phases.select { |assoc| (beatInBar / assoc.value).frac.round(1e-6) % 1 == 0 }
+			.collect(_.key)
 	}
 
 	// the control-rate proxies a walk of an environment would tap: sources set,
@@ -393,22 +403,44 @@ Broadcast {
 	// unheard — so it sends nothing. A pattern played outside any proxy has no ~proxy
 	// and is always heard, so it always sends.
 	*prOnEvent { |ev|
-		var msgs, delay, clock, proxy;
+		var msgs, delay, clock, proxy, beatDur, base, trigAddr, width;
 		if(running.not or: { events.not }) { ^this };
 		if(ev.isRest) { ^this };
 		proxy = ev[\proxy];
 		if(proxy.notNil and: { this.isAudible(proxy).not }) { ^this };
-		msgs = this.eventBase(ev) !? { |base| this.eventMessages(ev, nil, this.nextCount(base)) };
-		msgs ?? { ^this };
+		base = this.eventBase(ev);
+		base ?? { ^this };
 		clock = thisThread.clock;
+		beatDur = clock.tryPerform(\beatDur) ? 1;
+		msgs = this.eventMessages(ev, nil, beatDur);
+		msgs ?? { ^this };
 		delay = (ev[\latency] ? ev[\server].latency ? 0)
 			+ (ev[\lag] ? 0)
-			+ ((ev[\timingOffset] ? 0) * (clock.tryPerform(\beatDur) ? 1));
+			+ ((ev[\timingOffset] ? 0) * beatDur);
+		// the trig's 0 follows its 1 by the pulse width, unless a newer event of this
+		// voice has pulsed since (then that event's own 0 follows). The token is taken
+		// when the 1 goes out, not when the event is scheduled: an event is scheduled
+		// `delay` before it sounds, and taking it then would cancel the previous
+		// pulse's 0 whenever the gap equals delay + width.
+		trigAddr = base ++ "/trig";
+		width = this.pulseWidth(msgs.detect { |m| m[0].endsWith("/dur") } !? { |m| m[1] });
 		if(timetags) {
 			this.prSendBundle(delay, msgs);
+			SystemClock.sched(delay, { this.prPulseOff(trigAddr, width); nil });
 		} {
-			SystemClock.sched(delay, { this.prSendAll(msgs); nil });
+			SystemClock.sched(delay, { this.prSendAll(msgs); this.prPulseOff(trigAddr, width); nil });
 		};
+	}
+
+	// schedule a pulse's 0 `width` from now, cancelling any earlier one still
+	// pending for the address (the newer pulse is the one that must fall)
+	*prPulseOff { |address, width|
+		var token = (pulseTokens[address] ? 0) + 1;
+		pulseTokens[address] = token;
+		SystemClock.sched(width, {
+			if(running and: { pulseTokens[address] == token }) { this.prSend(address, 0) };
+			nil
+		});
 	}
 
 	*prSendAll { |msgs|
@@ -454,7 +486,31 @@ Broadcast {
 				1.wait;
 			}
 		}.play(clock, quant: [1, 0.5]);
+		// the grid pulses: on every sixteenth of the clock, a 1 for each note value whose
+		// boundary this is, and its 0 after the pulse width (or half a sixteenth). Sent
+		// the server's latency late, like events, so a pulse lands on the audible beat.
+		gridPulser = Routine {
+			loop {
+				if(running) {
+					var fired = this.pulsesAt(clock.beatInBar);
+					var width = this.pulseWidth(0.25 * clock.beatDur);
+					if(fired.notEmpty) {
+						SystemClock.sched(this.prLatency, {
+							try {
+								fired.do { |name| addr.sendMsg(pulseAddrs[name], 1) };
+							} { |err| this.prSendFailed(err) };
+							fired.do { |name| this.prPulseOff(pulseAddrs[name], width) };
+							nil
+						});
+					};
+				};
+				0.25.wait;
+			}
+		}.play(clock, quant: 0.25);
 	}
+
+	// how far ahead of the sound the language runs: the server's latency
+	*prLatency { ^(space !? { space.server.latency }) ? 0 }
 
 	*prWalkKr {
 		var keys = this.krKeysOf(space.envir);
@@ -511,9 +567,10 @@ Broadcast {
 			clock = space.clock;
 			clock !? {
 				addr.sendMsg(tempoAddr, clock.tempo * 60);
-				this.phaseValues(clock.beatInBar, clock.beatsPerBar).do { |phase, i|
-					addr.sendMsg(phaseAddrs[i], phase);
-				};
+				// the bar phase at the audible time: the clock runs `latency` ahead of
+				// the sound, as the events and grid pulses already allow for
+				addr.sendMsg(barAddr, this.barPhase(clock.beatInBar, clock.beatsPerBar,
+					this.prLatency * clock.tempo));
 			};
 		} { |err| this.prSendFailed(err) };
 	}
