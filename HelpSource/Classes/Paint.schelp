@@ -59,7 +59,7 @@ table::
 
 Every stroke is tagged for Broadcast with code::\syn_brush:: (the tool),
 code::\syn_material:: (the voice) and code::\syn_color:: (the tube), and goes out
-on code::/syn/paint/<tool>:: as amp, pitch, dur, hue, sat, val.
+under code::/syn/paint/<tool>/:: as amp, pitch, notes, size, dur, hue, sat, val and count, one value per address (link::Classes/Broadcast::).
 
 subsection:: Moves
 

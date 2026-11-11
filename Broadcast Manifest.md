@@ -154,22 +154,33 @@ played into the same proxy they share a stem. That is the correct behavior.
 
 ## OSC namespace
 
-Flat, stable, one float where the receiver will learn-map. Addresses MUST NOT
-change based on canvas state (no indices that shift when a proxy is removed).
+Flat, stable, ONE VALUE PER ADDRESS (revised 2026-11-11 after first contact with
+TouchDesigner: a receiver that keeps one channel per address — an OSC In CHOP,
+Resolume, MadMapper — then shows every value under its own name, and a chord's
+notes do not overwrite each other). Addresses MUST NOT change based on canvas
+state (no indices that shift when a proxy is removed). `count` rises by one per
+event of that material, so a repeated hit with the same amp and index is still a
+change on the wire: the trigger to watch. `notes` is the one multi-argument
+message (notes1, notes2 … in a CHOP); `size` says how many of them are current.
 
 ```
-/syn/hit/<folder>        amp index         .hits and .chop
-/syn/note/<synthdef>     amp degree dur    .deg (degree) and .chord (midinote)
-/syn/paint/<tool>        amp pitch dur hue sat val   painted strokes (Paint, Nov 2026):
-                                           pitch as MIDI note, colour 0..1 each
+/syn/hit/<folder>/amp | index | dur | count                       .hits and .chop
+/syn/note/<synthdef>/amp | pitch | notes… | size | dur | count    .deg and .chord
+/syn/note/<synthdef>/degree | degrees…                            .deg only: as written
+/syn/paint/<tool>/amp | pitch | notes… | size | dur | hue | sat | val | count   Paint
 /syn/kr/<proxyKey>       value             native range
 /syn/krn/<proxyKey>      value01           Spec-normalized, optional stream
 /syn/tempo               bpm
-/syn/beat                phase01           beat-in-bar, at the continuous rate
+/syn/bar                 phase01           within the bar, at the continuous rate
+/syn/half | quarter | eighth | sixteenth   phase01   within that note value, bar-aligned
 /syn/stems               key0 key1 ...     stem index -> proxy key, on change
 /syn/gone/<proxyKey>                       proxy cleared or source nil
 /syn/alive               seconds           heartbeat, 1 Hz
 ```
+
+`pitch` and `notes` are MIDI notes everywhere (a cloud's root as a MIDI note);
+`pitch` is the lowest note of a chord. `count` is sent last in an event's burst, so
+a receiver that fires on it finds the other values already in place.
 
 Keys are the ProxySpace keys as the performer typed them (`k`, `a`, `m`).
 Names in addresses are the Symbol as typed (`k`, `bplay`, `ping`). The
@@ -282,11 +293,14 @@ or settled something the text left open, it is recorded here.
 - JITLib's own `~tempo` proxy is a control-rate proxy, so it appears as
   `/syn/kr/tempo` (beats per second) beside `/syn/tempo` (BPM).
 
-**Payload details settled.** A `.deg` bracket chord and a `.chord` symbol are one
-message per sounding note, all at the same instant (OSC arguments are flat, and
-Resolume/MadMapper learn one float per address). `/syn/note/...` carries `dur`
-(beats) not `sustain`. Address parts are sanitised (anything an OSC address cannot
-hold becomes `_`).
+**Payload details settled (and revised 2026-11-11).** The first build sent one
+multi-argument message per note; TouchDesigner's OSC In CHOP showed that as
+`brush1 … brush6` with a chord's notes overwriting each other, and a repeated hit
+never moved a channel. Now every value has its own address, a chord is one `notes`
+message plus `size` and the lowest `pitch`, and `count` rises per event. `dur` is
+beats, not `sustain`. Address parts are sanitised (anything an OSC address cannot
+hold becomes `_`). `/syn/beat` became `/syn/bar`, with `half`, `quarter`, `eighth`
+and `sixteenth` phases beside it, all bar-aligned.
 
 **Performance budget, as measured.** The per-event path allocates the message
 arrays and one scheduling thunk; the address strings are cached per material, so

@@ -17,7 +17,7 @@ Status (November 2026):
   `dab` / `drip` / `spray` / `wash`, each one voice applied in time —
   `\orange.brush("Cm7 G7")` — with the moves `.darker` / `.lighter` / `.paler` /
   `.saturate` / `.warmer` / `.cooler` / `.paint` on patterns and proxies, and
-  `mix` between tubes. Every stroke goes out on `/syn/paint/<tool>` with its
+  `mix` between tubes. Every stroke goes out under `/syn/paint/<tool>/` with its
   colour. The palette is a first set: calibration by ear is John's.
 - **Phase 4 — Broadcast is real** (November 2026): events, control values and
   per-proxy audio stems streamed to a VJ's machine, configured once in Setup and

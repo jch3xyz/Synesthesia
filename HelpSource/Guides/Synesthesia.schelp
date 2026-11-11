@@ -311,14 +311,17 @@ table::
 ## strong::You type:: || strong::The receiver gets::
 ## code::~r = { 55 };:: || code::/syn/kr/r 55.0:: thirty times a second, within a bar
 ## code::~a.fade(6).play;:: || code::/syn/stems main a:: — and audio for code::~a:: on hardware channels 4–5
-## code::~k.play;:: || code::/syn/hit/k 1.0 0:: on every kick, landing on the audible onset; code::/syn/stems main a k::
+## code::~k.play;:: || code::/syn/hit/k/amp 1.0::, code::/index 0::, code::/dur:: and a code::/count:: that rises by one on every kick, landing on the audible onset; code::/syn/stems main a k::
 ## code::~a.fx(\lpf, pad(\x).mapExp(200, 8000));:: || code::/syn/kr/syn_sig1:: in Hz and code::/syn/krn/syn_sig1:: in 0..1, as you move the trackpad
-## code::~m.play;:: || code::/syn/note/ping 0.3 3 0.5:: per note; the bracket chord is three messages at one instant
+## code::~m.play;:: || code::/syn/note/ping/pitch:: (the MIDI note), code::/notes:: (all of a bracket chord in one message), code::/size::, code::/degree::, code::/degrees::, code::/dur::, code::/count:: per event
 ## code::hush(15);:: || the stems fade over 15 s, the hits stop, the stem table does not change
 ::
 
-Plus code::/syn/tempo:: and code::/syn/beat:: at the same rate as the control
-values, and a code::/syn/alive:: heartbeat every second. The whole namespace, and
+Every value has its own address, so a receiver that keeps one channel per address
+names each one, and code::count:: changing is the trigger to watch. Plus
+code::/syn/tempo:: and the phases code::/syn/bar::, code::/syn/half::,
+code::/syn/quarter::, code::/syn/eighth:: and code::/syn/sixteenth:: at the same
+rate as the control values, and a code::/syn/alive:: heartbeat every second. The whole namespace, and
 how each stream works, is on the link::Classes/Broadcast:: page; the setup-time
 options (which streams, the rate, where the stems land, the root) are its
 link::Classes/Broadcast#*start#start:: arguments.

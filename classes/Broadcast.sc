@@ -11,25 +11,37 @@
 //   Broadcast.stop;
 //
 // Three streams leave the machine:
-//   events      one OSC message per sounding hit or note from every brush (hits,
-//               deg, chord, chop), timed to the audible onset
+//   events      one OSC message per value of every sounding hit or note from every
+//               brush (hits, deg, chord, chop, the painting tools), timed to the
+//               audible onset
 //   continuous  every control-rate proxy's current value at `rate` Hz, each on its
-//               own stable address, plus tempo and beat-in-bar phase
+//               own stable address, plus tempo and the bar / half / quarter /
+//               eighth / sixteenth phases
 //   stems       a stereo pair per audible proxy on hardware outputs from `stemOut`,
 //               the main mix always on stem 0 — an aggregate device (interface +
 //               BlackHole) hands those channels to SonoBus or JackTrip
 //
-// The OSC namespace (the root is a setting; "/syn" is the default):
-//   /syn/hit/<folder>      amp index          .hits and .chop
-//   /syn/note/<synthdef>   amp pitch dur      .deg (scale degree) and .chord (midinote),
-//                                             one message per note of a chord
+// The OSC namespace (the root is a setting; "/syn" is the default). ONE VALUE PER
+// ADDRESS: receivers that keep one channel per address (TouchDesigner's OSC In
+// CHOP, Resolume, MadMapper) then show every value under its own name, and a
+// chord's notes do not overwrite each other. `count` goes up by one on every event
+// of that material, so a repeated hit with the same amp and index is still a change
+// on the wire — the trigger a receiver can watch. `notes` is the one multi-argument
+// message: every note of a chord at once (notes1, notes2 … in a CHOP), `size` says
+// how many are current, `pitch` is the lowest.
+//   /syn/hit/<folder>/amp | index | dur | count          .hits and .chop
+//   /syn/note/<synthdef>/amp | pitch | notes… | size | dur | count     .deg and .chord
+//   /syn/note/<synthdef>/degree | degrees…                .deg only: what was written
+//   /syn/paint/<tool>/amp | pitch | notes… | size | dur | hue | sat | val | count
 //   /syn/kr/<proxyKey>     value              native range
 //   /syn/krn/<proxyKey>    value01            Spec-normalised, where a Spec is registered
 //   /syn/tempo             bpm
-//   /syn/beat              phase01            beat-in-bar, at the continuous rate
+//   /syn/bar | half | quarter | eighth | sixteenth   phase01 within that note value,
+//                                             aligned to the bar, at the continuous rate
 //   /syn/stems             key0 key1 ...      stem index -> proxy key, on every change
 //   /syn/gone/<proxyKey>                      proxy cleared or source set to nil
 //   /syn/alive             seconds            heartbeat, 1 Hz
+// pitch and notes are MIDI notes everywhere (a cloud's root as a MIDI note).
 //
 // NEVER BREAKS THE MUSIC. A wrong IP, an absent receiver, a missing aggregate device,
 // too few output channels, SonoBus not running: the canvas sounds identical and the
@@ -79,10 +91,12 @@ Broadcast {
 	classvar <events = false, <kr = false, <stems = false;
 	classvar <running = false, <warnings, space, startedAt;
 	// events
-	classvar hitAddrs, noteAddrs, origPlay, hooked = false;
+	classvar origPlay, hooked = false, counts;
 	// continuous
 	classvar <krKeys, krGen = 0, krGens, krAddrs, krnAddrs, krResponder, krWalker;
-	classvar tempoAddr, beatAddr, stemsAddr, aliveAddr;
+	classvar tempoAddr, phaseAddrs, stemsAddr, aliveAddr;
+	// the note values the phase stream counts, in quarter-note beats
+	classvar <phases;
 	// stems
 	classvar <stemTable, stemGains, stemWalker, heartbeat, mainSynth, mainDef, mainPending = false;
 	classvar hushLag, hushLagUntil;
@@ -94,6 +108,7 @@ Broadcast {
 		Spec.add(\bc_lag, [0, 60]);
 		warnings = IdentityDictionary.new;
 		krKeys = [];
+		phases = [\half -> 2, \quarter -> 1, \eighth -> 0.5, \sixteenth -> 0.25];
 	}
 
 	// ----- the setup-time surface -------------------------------------------
@@ -136,11 +151,10 @@ Broadcast {
 		kr = cont;
 		stems = st;
 		tempoAddr = this.address(root, "tempo");
-		beatAddr = this.address(root, "beat");
+		phaseAddrs = ([\bar] ++ phases.collect(_.key)).collect { |name| this.address(root, name) };
 		stemsAddr = this.address(root, "stems");
 		aliveAddr = this.address(root, "alive");
-		hitAddrs = IdentityDictionary.new;
-		noteAddrs = IdentityDictionary.new;
+		counts = Dictionary.new;
 		krAddrs = IdentityDictionary.new;
 		krnAddrs = IdentityDictionary.new;
 	}
@@ -232,40 +246,83 @@ Broadcast {
 	*goneAddress { |key, root| ^this.address(root ? this.root ? "/syn", "gone", key) }
 	*paintAddress { |tool, root| ^this.address(root ? this.root ? "/syn", "paint", tool) }
 
-	// The messages one event produces, as [[address, arg, arg...], ...], or nil for a
-	// rest or an event that did not come from a brush. Pure: no server, no state.
-	//   hits/chop  -> amp, variant index (the sample picked, or the slice)
-	//   deg        -> amp, degree, dur    — one message per degree of a bracket chord
-	//   chord      -> amp, midinote, dur  — one message per note of the chord
-	//   paint tools (brush, mark, dab, drip, spray, wash — Paint.tools)
-	//              -> amp, midinote, dur, hue, sat, val — one message per note, on
-	//                 /syn/paint/<tool>: a colour's coordinates are its screen colour
-	*eventMessages { |ev, root|
+	// the address family an event's messages hang under — "/syn/hit/k",
+	// "/syn/note/ping", "/syn/paint/brush" — or nil for an event no brush made
+	*eventBase { |ev, root|
 		var brush = ev[\syn_brush], material = ev[\syn_material];
-		var amp, dur, pitches, address;
 		if(brush.isNil or: { material.isNil }) { ^nil };
-		if(ev.isRest) { ^nil };
 		root = root ? this.root ? "/syn";
+		if(Paint.tools.includesKey(brush)) { ^this.paintAddress(brush, root) };
+		^switch(brush,
+			\hits, { this.hitAddress(material, root) },
+			\chop, { this.hitAddress(material, root) },
+			\deg, { this.noteAddress(material, root) },
+			\chord, { this.noteAddress(material, root) },
+			{ nil }
+		)
+	}
+
+	// The messages one event produces, as [[address, arg, arg...], ...], or nil for a
+	// rest or an event that did not come from a brush. Pure: no server, no state; the
+	// count is passed in (prOnEvent keeps it) and left out when nil. One value per
+	// address (see the header); `count` goes last, so a receiver that fires on it
+	// finds the event's other values already in place.
+	//   hits/chop     amp, index (the sample picked, or the slice), dur, count
+	//   deg / chord   amp, pitch (lowest MIDI note), notes (all, one message), size,
+	//                 dur, count — and for deg, degree and degrees as written
+	//   paint tools   as deg/chord, plus hue, sat, val: the stroke's colour
+	*eventMessages { |ev, root, count|
+		var brush = ev[\syn_brush];
+		var base = this.eventBase(ev, root);
+		var amp, dur, pitches, degrees, msgs;
+		base ?? { ^nil };
+		if(ev.isRest) { ^nil };
 		amp = ev.use { ~amp.value } ? 0;
 		dur = ev[\dur];
 		dur = if(dur.isNumber) { dur } { dur.value ? 0 };
-		if(Paint.tools.includesKey(brush)) {
-			pitches = ev.use { ~freq.value }.asArray.collect(_.cpsmidi);
-			address = this.paintAddress(brush, root);
-			^pitches.collect { |pitch|
-				[address, amp, pitch, dur, ev[\hue] ? 0, ev[\sat] ? 0, ev[\val] ? 0]
-			}
+		msgs = [[base ++ "/amp", amp]];
+		if((brush == \hits) or: { brush == \chop }) {
+			msgs = msgs.add([base ++ "/index", ev[\syn_index] ? ev[\slice] ? 0]);
+		} {
+			pitches = if(Paint.tools.includesKey(brush)) {
+				ev.use { ~freq.value }.asArray.collect(_.cpsmidi)   // a cloud sets freq alone
+			} {
+				ev.use { ~midinote.value }.asArray
+			};
+			msgs = msgs ++ [
+				[base ++ "/pitch", pitches.minItem],
+				[base ++ "/notes"] ++ pitches,
+				[base ++ "/size", pitches.size]
+			];
+			if(brush == \deg) {
+				degrees = ev[\degree].asArray;
+				msgs = msgs ++ [[base ++ "/degree", degrees.minItem], [base ++ "/degrees"] ++ degrees];
+			};
 		};
-		switch(brush,
-			\hits, { ^[[this.hitAddress(material, root), amp, ev[\syn_index] ? 0]] },
-			\chop, { ^[[this.hitAddress(material, root), amp, ev[\syn_index] ? ev[\slice] ? 0]] },
-			\deg, { pitches = ev[\degree] },
-			\chord, { pitches = ev.use { ~midinote.value } },
-			{ ^nil }
-		);
-		pitches ?? { ^nil };
-		address = this.noteAddress(material, root);
-		^pitches.asArray.collect { |pitch| [address, amp, pitch, dur] }
+		msgs = msgs.add([base ++ "/dur", dur]);
+		if(Paint.tools.includesKey(brush)) {
+			msgs = msgs ++ [[base ++ "/hue", ev[\hue] ? 0], [base ++ "/sat", ev[\sat] ? 0],
+				[base ++ "/val", ev[\val] ? 0]];
+		};
+		count !? { msgs = msgs.add([base ++ "/count", count]) };
+		^msgs
+	}
+
+	// the next count for an address family: 1, 2, 3 … wrapping at a million
+	*nextCount { |base|
+		var n;
+		counts ?? { counts = Dictionary.new };
+		n = (counts[base] ? 0) + 1;
+		if(n > 1000000) { n = 1 };
+		counts[base] = n;
+		^n
+	}
+
+	// the phase streams: [address, phase01] for the bar and each note value in
+	// `phases`, all aligned to the bar. Pure, so the alignment is unit-tested:
+	// beatInBar 1.5 of 4 -> bar 0.375, half 0.75, quarter 0.5, eighth 0, sixteenth 0.
+	*phaseValues { |beatInBar, beatsPerBar = 4|
+		^[beatInBar / beatsPerBar] ++ phases.collect { |assoc| (beatInBar / assoc.value).frac }
 	}
 
 	// the control-rate proxies a walk of an environment would tap: sources set,
@@ -341,7 +398,7 @@ Broadcast {
 		if(ev.isRest) { ^this };
 		proxy = ev[\proxy];
 		if(proxy.notNil and: { this.isAudible(proxy).not }) { ^this };
-		msgs = this.eventMessages(ev);
+		msgs = this.eventBase(ev) !? { |base| this.eventMessages(ev, nil, this.nextCount(base)) };
 		msgs ?? { ^this };
 		clock = thisThread.clock;
 		delay = (ev[\latency] ? ev[\server].latency ? 0)
@@ -454,7 +511,9 @@ Broadcast {
 			clock = space.clock;
 			clock !? {
 				addr.sendMsg(tempoAddr, clock.tempo * 60);
-				addr.sendMsg(beatAddr, clock.beatInBar / clock.beatsPerBar);
+				this.phaseValues(clock.beatInBar, clock.beatsPerBar).do { |phase, i|
+					addr.sendMsg(phaseAddrs[i], phase);
+				};
 			};
 		} { |err| this.prSendFailed(err) };
 	}

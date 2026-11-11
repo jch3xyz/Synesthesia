@@ -39,21 +39,34 @@ read link::Guides/Synesthesia#Playing with a VJ::.
 
 SECTION:: The OSC namespace
 
-Flat and stable: one float where the receiver will learn-map, and no address ever
-depends on canvas state (no indices that shift when a proxy is removed). Keys are
-the ProxySpace keys as typed (code::k::, code::a::), names are the Symbols as typed
-(code::k::, code::bplay::, code::ping::); characters that cannot appear in an OSC
-address become code::_::. The root is a setting, so two machines can coexist.
+Flat and stable, and strong::one value per address::: a receiver that keeps one
+channel per address (TouchDesigner's OSC In CHOP, Resolume, MadMapper) then shows
+every value under its own name, and a chord's notes do not overwrite each other.
+No address ever depends on canvas state (no indices that shift when a proxy is
+removed). Keys are the ProxySpace keys as typed (code::k::, code::a::), names are
+the Symbols as typed (code::k::, code::bplay::, code::ping::); characters that cannot
+appear in an OSC address become code::_::. The root is a setting, so two machines
+can coexist.
+
+An event arrives as a burst of messages under its family, code::count:: last:
+code::count:: rises by one per event of that material, so a repeated hit with the
+same amp and index is still a change on the wire — the trigger to watch — and a
+receiver that fires on it finds the event's other values already in place.
+code::notes:: is the one multi-argument message (every note of a chord at once:
+code::notes1::, code::notes2:: … in a CHOP); code::size:: says how many are current
+and code::pitch:: is the lowest. Pitches are MIDI notes everywhere.
 
 table::
-## strong::Address:: || strong::Arguments:: || strong::When::
-## code::/syn/hit/<folder>:: || amp, index || every code::hits:: hit and every code::chop:: slice: amplitude (after accents), then the sample variant or slice number
-## code::/syn/note/<synthdef>:: || amp, pitch, dur || every code::deg:: note (pitch is the scale degree) and every code::chord:: note (pitch is the MIDI note); a chord is one message per note, all at the same instant; dur in beats
-## code::/syn/paint/<tool>:: || amp, pitch, dur, hue, sat, val || every note of a painted stroke (link::Classes/Paint::: code::brush::, code::mark::, code::dab::, code::drip::, code::spray::, code::wash::): pitch is the MIDI note (a cloud's root as a MIDI note), then the event's colour, 0..1 each — its timbre coordinates are its screen colour
+## strong::Address:: || strong::Value:: || strong::When::
+## code::/syn/hit/<folder>/amp:: code::/index:: code::/dur:: code::/count:: || amp (after accents), the sample variant or slice number, beats, the count || every code::hits:: hit and every code::chop:: slice
+## code::/syn/note/<synthdef>/amp:: code::/pitch:: code::/notes:: code::/size:: code::/dur:: code::/count:: || amp, the lowest MIDI note, every MIDI note (one message), how many, beats, the count || every code::deg:: and code::chord:: event
+## code::/syn/note/<synthdef>/degree:: code::/degrees:: || the lowest degree as written, every degree (one message) || code::deg:: only
+## code::/syn/paint/<tool>/amp:: code::/pitch:: code::/notes:: code::/size:: code::/dur:: code::/hue:: code::/sat:: code::/val:: code::/count:: || as a note, plus the stroke's colour, 0..1 each — its timbre coordinates are its screen colour || every painted stroke (link::Classes/Paint::: code::brush::, code::mark::, code::dab::, code::drip::, code::spray::, code::wash::); a cloud's pitch is its root as a MIDI note
 ## code::/syn/kr/<proxyKey>:: || value || each control-rate proxy, at the continuous rate, in its native range
 ## code::/syn/krn/<proxyKey>:: || value01 || the same, normalised 0..1 through the link::Classes/Spec:: registered under the proxy's key (where there is one)
 ## code::/syn/tempo:: || bpm || at the continuous rate
-## code::/syn/beat:: || phase01 || beat-in-bar phase, at the continuous rate
+## code::/syn/bar:: || phase01 || within the bar, at the continuous rate
+## code::/syn/half:: code::/quarter:: code::/eighth:: code::/sixteenth:: || phase01 || within that note value, aligned to the bar, at the continuous rate (link::#*phases::)
 ## code::/syn/stems:: || key0, key1, … || the stem table, on every change; code::main:: is always first, code::-:: marks a free slot
 ## code::/syn/gone/<proxyKey>:: || — || once, when a proxy is cleared or its source set to nil
 ## code::/syn/alive:: || seconds || heartbeat, once a second
@@ -270,12 +283,41 @@ code::deg::, the Event's own code::~midinote:: for code::chord::).
 argument:: ev
 argument:: root
 defaults to the running root, else code::"/syn"::
+argument:: count
+the event's count under its family (nil leaves the count message out). The running
+hook keeps it per family with link::#*nextCount::.
 discussion::
 code::
-Broadcast.eventMessages(Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4, syn_index: 2, dur: 0.5)));
-// -> [ [ /syn/hit/k, 1.4, 2 ] ]
-Broadcast.eventMessages(Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2, note: [0, 3, 7], octave: 5, dur: 4)));
-// -> [ [ /syn/note/pad, 0.2, 60.0, 4 ], [ /syn/note/pad, 0.2, 63.0, 4 ], [ /syn/note/pad, 0.2, 67.0, 4 ] ]
+Broadcast.eventMessages(Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4, syn_index: 2, dur: 0.5)), "/syn", 7);
+// -> [ [ /syn/hit/k/amp, 1.4 ], [ /syn/hit/k/index, 2 ], [ /syn/hit/k/dur, 0.5 ], [ /syn/hit/k/count, 7 ] ]
+Broadcast.eventMessages(Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2, note: [0, 3, 7], octave: 5, dur: 4)), "/syn", 1);
+// -> [ [ /syn/note/pad/amp, 0.2 ], [ /syn/note/pad/pitch, 60.0 ], [ /syn/note/pad/notes, 60.0, 63.0, 67.0 ],
+//      [ /syn/note/pad/size, 3 ], [ /syn/note/pad/dur, 4 ], [ /syn/note/pad/count, 1 ] ]
+::
+
+METHOD:: eventBase
+The address family an event's messages hang under — code::"/syn/hit/k"::,
+code::"/syn/note/ping"::, code::"/syn/paint/brush"::, or nil for an event no brush
+made.
+
+METHOD:: nextCount
+The next count for an address family: 1, 2, 3 … wrapping at a million. Counts
+start again at every link::#*start::.
+
+METHOD:: phases
+The note values the phase stream counts, as code::name -> beats::: code::half::
+(2), code::quarter:: (1), code::eighth:: (0.5), code::sixteenth:: (0.25). Each goes
+out as code::/syn/<name>::, a 0..1 phase within that note value, aligned to the
+bar, beside code::/syn/bar::.
+
+METHOD:: phaseValues
+The phases for a position in the bar: code::[bar, half, quarter, eighth, sixteenth]::,
+each 0..1. Pure.
+argument:: beatInBar
+argument:: beatsPerBar
+discussion::
+code::
+Broadcast.phaseValues(1.5, 4);   // -> [ 0.375, 0.75, 0.5, 0.0, 0.0 ]
 ::
 
 METHOD:: krKeysOf
@@ -322,10 +364,10 @@ bpm(120); grid(4);
 ~a = \tone.stack(~r, [1, 2, 4]);
 ~a.fade(6).play;                           // -> /syn/stems main a ; audio on channels 4-5
 ~k = \k.hits("x..x..x.");
-~k.play;                                   // -> /syn/hit/k 1.0 0 … ; stems main a k
+~k.play;                                   // -> /syn/hit/k/amp 1.0, /index 0, /dur 0.25, /count 1, 2, 3 … ; stems main a k
 ~a.fx(\lpf, pad(\x).mapExp(200, 8000));    // -> /syn/kr/syn_sig1 (Hz) and /syn/krn/syn_sig1 (0..1)
 ~m = \ping.deg("0 3 5 [0 2 4]", 0.5);
-~m.play;                                   // -> /syn/note/ping 0.3 0 0.5 … (three at once for the chord)
+~m.play;                                   // -> /syn/note/ping/pitch 60, /notes 60 64 67 for the chord, /degrees 0 2 4, /count …
 hush(15);                                  // stems fade over 15 s, events stop, table unchanged
 Broadcast.status;
 Broadcast.stop;
