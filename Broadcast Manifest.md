@@ -182,9 +182,10 @@ runs the server's latency ahead of the sound, and each of them allows for it. Tw
 events on one address closer together than the pulse width (two voices on the same
 material, or a reassigned pattern crossfading with its old self) share one pulse:
 a receiver sampling at frame rate could not have told them apart anyway.
-`notes` is the one multi-argument message: the event's MIDI notes, lowest first, in
-eight slots with 0 in the unused ones — so notes1 is always the lowest note, a slot
-a chord does not use reads 0, and nothing stale survives a smaller chord. `dur` is
+`notes` is the one multi-argument message: the event's MIDI notes, lowest first, as
+wide as the widest chord that voice has sent since start (at most eight), with 0 in
+the slots a smaller chord does not use — so notes1 is always the lowest note, a
+single-note voice is notes1 alone, and nothing stale survives a smaller chord. `dur` is
 seconds to this voice's next event (scale a decay or a fade to it without knowing
 the tempo). `trig` is sent last in an event's burst, so a receiver firing on it
 finds the other values already in place. A cloud's note is its root as a MIDI note.
@@ -306,7 +307,9 @@ multi-argument message per note; TouchDesigner's OSC In CHOP showed that as
 never moved a channel. A first revision put every value on its own address with a
 rising `count`; John's second look settled it: a VJ wants a pulse, not a count, so
 `trig` is 1 on the onset and 0 after the pulse width; `pitch` and `size` went
-(sorted, zero-filled `notes` slots make them redundant), `degree`/`degrees` went (the
+(sorted `notes` slots, padded with 0 to the voice's widest chord, make them
+redundant; a third look cut the fixed eight slots, which flooded the CHOP with
+empty channels), `degree`/`degrees` went (the
 VJ hears pitch, not notation), and `dur` became seconds. `/syn/beat` became the
 `/syn/bar` phase, with `half`, `quarter`, `eighth` and `sixteenth` pulses fired from
 the clock on the grid. Address parts are sanitised (anything an OSC address cannot

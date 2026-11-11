@@ -81,8 +81,8 @@ TestBroadcast : UnitTest {
 		this.assertEquals(msgs.collect(_[0]), ["/syn/note/ping/amp", "/syn/note/ping/notes",
 			"/syn/note/ping/dur", "/syn/note/ping/trig"], "a note: amp, notes, dur, trig — nothing else");
 		this.assertEquals(m["/syn/note/ping/amp"], [0.3], "amp");
-		this.assertEquals(m["/syn/note/ping/notes"], [65, 0, 0, 0, 0, 0, 0, 0],
-			"notes: the MIDI note (degree 3 of the default major scale) in slot 1, the other slots 0");
+		this.assertEquals(m["/syn/note/ping/notes"], [65],
+			"notes: the MIDI note (degree 3 of the default major scale), one slot for one note");
 		this.assertEquals(m["/syn/note/ping/dur"], [0.25], "dur in seconds");
 		this.assertEquals(msgs.last, ["/syn/note/ping/trig", 1], "the trig's 1 comes last");
 	}
@@ -91,8 +91,11 @@ TestBroadcast : UnitTest {
 		var ev = Event.default.putAll((syn_brush: \deg, syn_material: \ping, amp: 0.3,
 			degree: [4, 0, 2], dur: 1));
 		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn"));
-		this.assertEquals(m["/syn/note/ping/notes"], [60, 64, 67, 0, 0, 0, 0, 0],
+		this.assertEquals(m["/syn/note/ping/notes"], [60, 64, 67],
 			"a bracket chord: its MIDI notes lowest first, whatever order it was written in");
+		m = this.byAddress(Broadcast.eventMessages(ev.copy.put(\degree, 0), "/syn", 1, 3));
+		this.assertEquals(m["/syn/note/ping/notes"], [60, 0, 0],
+			"a single note after that chord fills the voice's three slots, the others 0");
 	}
 
 	test_payload_chord {
@@ -100,7 +103,7 @@ TestBroadcast : UnitTest {
 		var ev = Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2,
 			note: [0, 3, 7], octave: 5, dur: 4));
 		var m = this.byAddress(Broadcast.eventMessages(ev, "/syn"));
-		this.assertEquals(m["/syn/note/pad/notes"], [60.0, 63.0, 67.0, 0, 0, 0, 0, 0],
+		this.assertEquals(m["/syn/note/pad/notes"], [60.0, 63.0, 67.0],
 			"chord: the MIDI notes, by the Event's own pitch chain, lowest first");
 	}
 
@@ -119,9 +122,12 @@ TestBroadcast : UnitTest {
 	}
 
 	test_noteSlotsFor {
-		this.assertEquals(Broadcast.noteSlotsFor([67, 60, 64]), [60, 64, 67, 0, 0, 0, 0, 0], "sorted, padded with 0");
-		this.assertEquals(Broadcast.noteSlotsFor(72), [72, 0, 0, 0, 0, 0, 0, 0], "a single note");
-		this.assertEquals(Broadcast.noteSlotsFor((60..70)), (60..67), "a chord wider than the slots keeps its lowest");
+		this.assertEquals(Broadcast.noteSlotsFor([67, 60, 64]), [60, 64, 67], "sorted, as wide as the chord");
+		this.assertEquals(Broadcast.noteSlotsFor(72), [72], "a single note is one slot");
+		this.assertEquals(Broadcast.noteSlotsFor(72, 4), [72, 0, 0, 0], "after a four-note chord, padded with 0 to four");
+		this.assertEquals(Broadcast.noteSlotsFor([67, 60, 64], 2), [60, 64, 67], "a chord wider than the width so far widens it");
+		this.assertEquals(Broadcast.noteSlotsFor((60..70)), (60..67), "never more than noteSlots: the lowest are kept");
+		this.assertEquals(Broadcast.noteSlotsFor(60, 20), [60, 0, 0, 0, 0, 0, 0, 0], "nor padded past it");
 	}
 
 	// ----- pulses ----------------------------------------------------------

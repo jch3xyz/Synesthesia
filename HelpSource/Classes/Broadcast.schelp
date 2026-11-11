@@ -54,15 +54,16 @@ whose events come faster — see link::#*start::'s code::pulse::), so a receiver
 samples a plain rising edge and a Trigger CHOP fires on it. An event's other
 values are sent first, so a receiver that fires on code::trig:: finds them in
 place. code::notes:: is the one multi-argument message: the event's MIDI notes,
-lowest first, in eight slots with 0 in the unused ones (code::notes1:: … code::notes8::
-in a CHOP) — so slot 1 is always the lowest note and nothing stale survives a
-smaller chord. code::dur:: is seconds to this voice's next event: scale a decay or
+lowest first, as wide as the widest chord that voice has sent since start (at most
+eight), with 0 in the slots a smaller chord does not use — so code::notes1:: is
+always the lowest note, a single-note voice shows code::notes1:: alone, and nothing
+stale survives a smaller chord. code::dur:: is seconds to this voice's next event: scale a decay or
 a fade to it without knowing the tempo.
 
 table::
 ## strong::Address:: || strong::Value:: || strong::When::
 ## code::/syn/hit/<folder>/trig:: code::/amp:: code::/index:: code::/dur:: || the pulse; amp (after accents); the sample variant or slice number; seconds to the next hit || every code::hits:: hit and every code::chop:: slice
-## code::/syn/note/<synthdef>/trig:: code::/amp:: code::/notes:: code::/dur:: || the pulse; amp; the MIDI notes lowest first in eight slots; seconds to the next event || every code::deg:: and code::chord:: event
+## code::/syn/note/<synthdef>/trig:: code::/amp:: code::/notes:: code::/dur:: || the pulse; amp; the MIDI notes lowest first, as wide as the voice's widest chord; seconds to the next event || every code::deg:: and code::chord:: event
 ## code::/syn/paint/<tool>/trig:: code::/amp:: code::/notes:: code::/dur:: code::/hue:: code::/sat:: code::/val:: || as a note, plus the stroke's colour, 0..1 each — its timbre coordinates are its screen colour || every painted stroke (link::Classes/Paint::: code::brush::, code::mark::, code::dab::, code::drip::, code::spray::, code::wash::); a cloud's note is its root as a MIDI note
 ## code::/syn/kr/<proxyKey>:: || value || each control-rate proxy, at the continuous rate, in its native range
 ## code::/syn/krn/<proxyKey>:: || value01 || the same, normalised 0..1 through the link::Classes/Spec:: registered under the proxy's key (where there is one)
@@ -296,12 +297,14 @@ argument:: root
 defaults to the running root, else code::"/syn"::
 argument:: beatDur
 seconds per beat, to put code::dur:: on the wire in seconds (default 1).
+argument:: width
+how many note slots this voice already shows (default 0); see link::#*noteSlotsFor::.
 discussion::
 code::
 Broadcast.eventMessages(Event.default.putAll((syn_brush: \hits, syn_material: \k, amp: 1.4, syn_index: 2, dur: 0.5)), "/syn", 0.5);
 // -> [ [ /syn/hit/k/amp, 1.4 ], [ /syn/hit/k/index, 2 ], [ /syn/hit/k/dur, 0.25 ], [ /syn/hit/k/trig, 1 ] ]
 Broadcast.eventMessages(Event.default.putAll((syn_brush: \chord, syn_material: \pad, amp: 0.2, note: [0, 3, 7], octave: 5, dur: 4)), "/syn", 0.5);
-// -> [ [ /syn/note/pad/amp, 0.2 ], [ /syn/note/pad/notes, 60.0, 63.0, 67.0, 0, 0, 0, 0, 0 ],
+// -> [ [ /syn/note/pad/amp, 0.2 ], [ /syn/note/pad/notes, 60.0, 63.0, 67.0 ],
 //      [ /syn/note/pad/dur, 2.0 ], [ /syn/note/pad/trig, 1 ] ]
 ::
 
@@ -311,12 +314,19 @@ code::"/syn/note/ping"::, code::"/syn/paint/brush"::, or nil for an event no bru
 made.
 
 METHOD:: noteSlotsFor
-The code::notes:: message's values for some pitches: lowest first, in
-link::#*noteSlots:: slots with 0 in the unused ones; a chord wider than that keeps
-its lowest notes. Pure.
+The code::notes:: message's values for some pitches: lowest first, padded with 0 to
+strong::width:: (the widest this voice has sent; the running hook keeps it per voice),
+never more than link::#*noteSlots:: wide (a wider chord keeps its lowest notes). Pure.
+argument:: pitches
+argument:: width
+discussion::
+code::
+Broadcast.noteSlotsFor([67, 60, 64]);   // -> [ 60, 64, 67 ]
+Broadcast.noteSlotsFor(72, 4);          // -> [ 72, 0, 0, 0 ]  after a four-note chord
+::
 
 METHOD:: noteSlots
-How many slots code::notes:: always carries (8).
+The most slots code::notes:: ever carries (8).
 
 METHOD:: pulseWidth
 How long a pulse stays up: the pulse width, or half the gap to the voice's next
@@ -401,7 +411,7 @@ bpm(120); grid(4);
 ~k.play;                                   // -> /syn/hit/k/trig 1 then 0 on every kick, with /amp 1.0, /index 0, /dur 0.125 ; stems main a k
 ~a.fx(\lpf, pad(\x).mapExp(200, 8000));    // -> /syn/kr/syn_sig1 (Hz) and /syn/krn/syn_sig1 (0..1)
 ~m = \ping.deg("0 3 5 [0 2 4]", 0.5);
-~m.play;                                   // -> /syn/note/ping/trig per event, /notes 60 0 0 0 0 0 0 0 … and 60 64 67 0 0 0 0 0 for the chord
+~m.play;                                   // -> /syn/note/ping/trig per event, /notes 60 … then 60 64 67 for the chord and 65 0 0 after it
 hush(15);                                  // stems fade over 15 s, events stop, table unchanged
 Broadcast.status;
 Broadcast.stop;

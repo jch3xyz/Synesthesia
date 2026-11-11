@@ -552,8 +552,8 @@ every value has its own address, so every channel is named by what it is, and ev
 event and grid point is a emphasis::pulse:: — code::trig:: 1 on the onset, 0 after
 the pulse width — so a trigger fires on a rising edge. Keys and names exactly as
 typed (characters an address cannot hold become code::_::); the root is a setting.
-code::notes:: is the one multi-argument message: the MIDI notes lowest first in
-eight slots, 0 in the unused ones. code::dur:: is seconds to the voice's next event.
+code::notes:: is the one multi-argument message: the MIDI notes lowest first, as wide
+as the voice's widest chord so far, 0 in the slots a smaller chord does not use. code::dur:: is seconds to the voice's next event.
 
 code::
 /syn/hit/<folder>/trig | amp | index | dur          .hits and .chop

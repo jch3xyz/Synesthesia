@@ -313,7 +313,7 @@ table::
 ## code::~a.fade(6).play;:: || code::/syn/stems main a:: — and audio for code::~a:: on hardware channels 4–5
 ## code::~k.play;:: || a code::/syn/hit/k/trig:: pulse (1, then 0 fifty milliseconds later) on every kick, landing on the audible onset, with code::/amp 1.0::, code::/index 0:: and code::/dur:: in seconds already in place; code::/syn/stems main a k::
 ## code::~a.fx(\lpf, pad(\x).mapExp(200, 8000));:: || code::/syn/kr/syn_sig1:: in Hz and code::/syn/krn/syn_sig1:: in 0..1, as you move the trackpad
-## code::~m.play;:: || a code::/syn/note/ping/trig:: pulse per event, with code::/notes:: (the MIDI notes, lowest first in eight slots — a bracket chord fills three), code::/amp:: and code::/dur::
+## code::~m.play;:: || a code::/syn/note/ping/trig:: pulse per event, with code::/notes:: (the MIDI notes, lowest first: one slot for single notes, three once the bracket chord has played), code::/amp:: and code::/dur::
 ## code::hush(15);:: || the stems fade over 15 s, the hits stop, the stem table does not change
 ::
 

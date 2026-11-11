@@ -39,9 +39,10 @@
 //   /syn/gone/<proxyKey>                      proxy cleared or source set to nil
 //   /syn/alive             seconds            heartbeat, 1 Hz
 // `notes` is the one multi-argument message: the event's MIDI notes, lowest first,
-// in `noteSlots` (8) slots with 0 in the unused ones — notes1 is always the lowest
-// note and a slot a chord does not use reads 0. `dur` is seconds to this voice's next
-// event. `trig` is sent last in a burst, so a receiver firing on it finds the
+// as wide as the widest chord this voice has sent since start (at most `noteSlots`,
+// 8), with 0 in the slots a smaller chord does not use — notes1 is always the
+// lowest note, a single-note voice is notes1 alone, and no stale note survives a
+// smaller chord. `dur` is seconds to this voice's next event. `trig` is sent last in a burst, so a receiver firing on it finds the
 // event's other values already in place.
 //
 // NEVER BREAKS THE MUSIC. A wrong IP, an absent receiver, a missing aggregate device,
@@ -92,7 +93,7 @@ Broadcast {
 	classvar <events = false, <kr = false, <stems = false;
 	classvar <running = false, <warnings, space, startedAt;
 	// events
-	classvar origPlay, hooked = false, pulseTokens;
+	classvar origPlay, hooked = false, pulseTokens, noteWidths;
 	// continuous
 	classvar <krKeys, krGen = 0, krGens, krAddrs, krnAddrs, krResponder, krWalker;
 	classvar tempoAddr, barAddr, pulseAddrs, stemsAddr, aliveAddr, gridPulser;
@@ -162,6 +163,7 @@ Broadcast {
 		stemsAddr = this.address(root, "stems");
 		aliveAddr = this.address(root, "alive");
 		pulseTokens = Dictionary.new;
+		noteWidths = Dictionary.new;
 		krAddrs = IdentityDictionary.new;
 		krnAddrs = IdentityDictionary.new;
 	}
@@ -273,11 +275,12 @@ Broadcast {
 	// The messages one event produces, as [[address, arg, arg...], ...], or nil for a
 	// rest or an event that did not come from a brush. Pure: no server, no state. One
 	// value per address (see the header), the trig's 1 last; the matching 0 is the
-	// sender's job (prOnEvent). beatDur turns the event's dur in beats into seconds.
+	// sender's job (prOnEvent). beatDur turns the event's dur in beats into seconds;
+	// width is how many note slots this voice already shows (prOnEvent keeps it).
 	//   hits/chop     amp, index (the sample picked, or the slice), dur, trig
-	//   deg / chord   amp, notes (MIDI notes, lowest first, noteSlots wide), dur, trig
+	//   deg / chord   amp, notes (MIDI notes, lowest first — noteSlotsFor), dur, trig
 	//   paint tools   as deg/chord, plus hue, sat, val: the stroke's colour
-	*eventMessages { |ev, root, beatDur = 1|
+	*eventMessages { |ev, root, beatDur = 1, width = 0|
 		var brush = ev[\syn_brush];
 		var base = this.eventBase(ev, root);
 		var amp, dur, pitches, msgs;
@@ -295,7 +298,7 @@ Broadcast {
 			} {
 				ev.use { ~midinote.value }.asArray
 			};
-			msgs = msgs.add([base ++ "/notes"] ++ this.noteSlotsFor(pitches));
+			msgs = msgs.add([base ++ "/notes"] ++ this.noteSlotsFor(pitches, width));
 		};
 		msgs = msgs.add([base ++ "/dur", dur * beatDur]);
 		if(Paint.tools.includesKey(brush)) {
@@ -305,10 +308,14 @@ Broadcast {
 		^msgs.add([base ++ "/trig", 1])
 	}
 
-	// the notes message's values: the pitches lowest first, in noteSlots slots, 0 in
-	// the unused ones (a chord wider than that keeps its lowest notes)
-	*noteSlotsFor { |pitches|
-		^pitches.asArray.sort.keep(noteSlots).extend(noteSlots, 0)
+	// the notes message's values: the pitches lowest first, padded with 0 to `width`
+	// (the widest this voice has sent) so a smaller chord overwrites every slot a
+	// bigger one used, and never more than noteSlots wide (a chord wider than that
+	// keeps its lowest notes). A receiver that keeps one channel per argument then
+	// shows notes1 alone for a single-note voice, notes1-4 for four-note chords.
+	*noteSlotsFor { |pitches, width = 0|
+		var sorted = pitches.asArray.sort.keep(noteSlots);
+		^sorted.extend(max(sorted.size, width ? 0).min(noteSlots), 0)
 	}
 
 	// how long a pulse stays up: the pulse width, or half the gap to this voice's
@@ -412,8 +419,12 @@ Broadcast {
 		base ?? { ^this };
 		clock = thisThread.clock;
 		beatDur = clock.tryPerform(\beatDur) ? 1;
-		msgs = this.eventMessages(ev, nil, beatDur);
+		noteWidths ?? { noteWidths = Dictionary.new };
+		msgs = this.eventMessages(ev, nil, beatDur, noteWidths[base] ? 0);
 		msgs ?? { ^this };
+		// remember how wide this voice's notes now are, so a smaller chord later still
+		// overwrites every slot (the width only grows, until the next start)
+		msgs.detect { |m| m[0].endsWith("/notes") } !? { |m| noteWidths[base] = m.size - 1 };
 		delay = (ev[\latency] ? ev[\server].latency ? 0)
 			+ (ev[\lag] ? 0)
 			+ ((ev[\timingOffset] ? 0) * beatDur);
